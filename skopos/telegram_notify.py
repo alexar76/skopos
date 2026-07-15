@@ -1,0 +1,203 @@
+"""Telegram notifications for security posture and scan results."""
+
+from __future__ import annotations
+
+import html
+import json
+import logging
+import os
+import threading
+import urllib.error
+import urllib.request
+from datetime import datetime, timezone
+
+from .config import AppConfig, load_app_env
+from .security.posture import SecurityPosture
+from .security.posture_loader import load_security_posture
+
+_log = logging.getLogger(__name__)
+
+DEFAULT_TELEGRAM_BOT_TOKEN_ENV = "TELEGRAM_BOT_TOKEN"
+DEFAULT_TELEGRAM_NOTIFY_INTERVAL_MINUTES = 60
+
+_lock = threading.Lock()
+_last_notify_utc: str | None = None
+
+
+def get_telegram_notify_status() -> dict:
+    with _lock:
+        return {"last_notify_utc": _last_notify_utc}
+
+
+def resolve_bot_token(cfg: AppConfig) -> str | None:
+    load_app_env()
+    env_name = (cfg.telegram_bot_token_env or DEFAULT_TELEGRAM_BOT_TOKEN_ENV).strip()
+    token = os.environ.get(env_name, "").strip()
+    return token or None
+
+
+def _parse_ts(ts: str | None) -> datetime | None:
+    if not ts:
+        return None
+    try:
+        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except Exception:
+        return None
+
+
+def _minutes_since(ts: str | None) -> float | None:
+    dt = _parse_ts(ts)
+    if not dt:
+        return None
+    return (datetime.now(tz=timezone.utc) - dt).total_seconds() / 60.0
+
+
+def format_security_message(
+    posture: SecurityPosture,
+    *,
+    scan_results: list[dict] | None = None,
+) -> str:
+    sev_counts: dict[str, int] = {}
+    for alert in posture.alerts:
+        sev_counts[alert.severity] = sev_counts.get(alert.severity, 0) + 1
+
+    lines = [
+        "🛡 <b>SKOPOS — Security alert</b>",
+        f"Score: <b>{posture.fleet_score}</b> ({html.escape(posture.grade)})",
+        f"Critical: {posture.critical_count} · High: {posture.high_count}",
+    ]
+
+    failed = [r for r in (scan_results or []) if not r.get("ok")]
+    if failed:
+        names = ", ".join(html.escape(str(r.get("server_name", "?"))) for r in failed[:5])
+        lines.append(f"⚠️ Scan errors: {names}")
+
+    top = sorted(
+        posture.alerts,
+        key=lambda a: {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}.get(a.severity, 9),
+    )[:8]
+    if top:
+        lines.append("")
+        lines.append("<b>Top findings:</b>")
+        for alert in top:
+            srv = f" ({html.escape(alert.server_name)})" if alert.server_name else ""
+            lines.append(f"• [{html.escape(alert.severity.upper())}] {html.escape(alert.title)}{srv}")
+
+    if posture.remarks:
+        lines.append("")
+        lines.append(html.escape(posture.remarks[0][:240]))
+
+    return "\n".join(lines)
+
+
+def send_telegram_message(token: str, chat_id: str, text: str, *, timeout: float = 15.0) -> tuple[bool, str]:
+    if not token.strip():
+        return False, "Bot token is empty"
+    if not str(chat_id).strip():
+        return False, "Chat ID is empty"
+
+    url = f"https://api.telegram.org/bot{token.strip()}/sendMessage"
+    payload = json.dumps(
+        {
+            "chat_id": str(chat_id).strip(),
+            "text": text[:4096],
+            "parse_mode": "HTML",
+            "disable_web_page_preview": True,
+        }
+    ).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            body = json.loads(resp.read().decode("utf-8"))
+        if body.get("ok"):
+            return True, "ok"
+        return False, str(body.get("description") or body)
+    except urllib.error.HTTPError as exc:
+        try:
+            detail = json.loads(exc.read().decode("utf-8")).get("description", str(exc))
+        except Exception:
+            detail = str(exc)
+        return False, str(detail)
+    except Exception as exc:
+        return False, str(exc)
+
+
+def _should_notify(posture: SecurityPosture, scan_results: list[dict] | None) -> bool:
+    if posture.critical_count or posture.high_count:
+        return True
+    if any(not r.get("ok") for r in (scan_results or [])):
+        return True
+    if any(a.severity == "medium" for a in posture.alerts):
+        return True
+    return False
+
+
+def maybe_send_security_telegram(
+    cfg: AppConfig,
+    *,
+    scan_results: list[dict] | None = None,
+    force: bool = False,
+    agent_yaml_path: str = "./agent.yaml",
+) -> tuple[bool, str]:
+    global _last_notify_utc
+
+    if not cfg.telegram_enabled:
+        return False, "Telegram notifications disabled"
+
+    chat_id = (cfg.telegram_chat_id or "").strip()
+    if not chat_id:
+        return False, "Telegram chat ID not configured"
+
+    token = resolve_bot_token(cfg)
+    if not token:
+        env_name = cfg.telegram_bot_token_env or DEFAULT_TELEGRAM_BOT_TOKEN_ENV
+        return False, f"Bot token not set ({env_name})"
+
+    interval = max(5, min(10080, int(cfg.telegram_notify_interval_minutes)))
+    with _lock:
+        elapsed = _minutes_since(_last_notify_utc)
+        if not force and elapsed is not None and elapsed < interval:
+            return False, f"Rate limited ({interval} min)"
+
+    try:
+        from skopos.db_dialect import resolve_db_target
+        from skopos.security.posture_loader import load_security_posture
+
+        posture = load_security_posture(resolve_db_target(cfg), cfg, agent_yaml_path=agent_yaml_path)
+    except Exception as exc:
+        _log.exception("Failed to load posture for Telegram: %s", exc)
+        return False, str(exc)
+
+    if not force and not _should_notify(posture, scan_results):
+        return False, "No actionable alerts"
+
+    text = format_security_message(posture, scan_results=scan_results)
+    ok, detail = send_telegram_message(token, chat_id, text)
+    if ok:
+        from .db import now_utc_iso
+
+        with _lock:
+            _last_notify_utc = now_utc_iso()
+    return ok, detail
+
+
+def send_test_notification(
+    cfg: AppConfig,
+    *,
+    token_override: str | None = None,
+    chat_id_override: str | None = None,
+) -> tuple[bool, str]:
+    chat_id = (chat_id_override or cfg.telegram_chat_id or "").strip()
+    token = (token_override or resolve_bot_token(cfg) or "").strip()
+    if not token or not chat_id:
+        return False, "Token and chat ID are required"
+    text = "✅ <b>SKOPOS</b>\nTest security notification — Telegram is configured correctly."
+    return send_telegram_message(token, chat_id, text)

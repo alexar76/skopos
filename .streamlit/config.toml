@@ -1,0 +1,23 @@
+[server]
+headless = true
+address = "0.0.0.0"
+port = 8501
+enableCORS = false
+enableXsrfProtection = true
+
+[browser]
+gatherUsageStats = false
+
+[client]
+showSidebarNavigation = false
+# Hide Deploy / Rerun / Clear cache — SKOPOS has its own sidebar controls.
+toolbarMode = "minimal"
+
+[theme]
+# Void baseline (Helios-style) — SKOPOS midnight theme overrides at runtime.
+base = "dark"
+primaryColor = "#ff8c2a"
+backgroundColor = "#060508"
+secondaryBackgroundColor = "#120c16"
+textColor = "#fff4e8"
+font = "sans serif"
