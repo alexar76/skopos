@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest pytest-cov
+          cp servers.example.yaml servers.yaml
+          cp agent.example.yaml agent.yaml
+
+      - name: Pytest + coverage
+        run: |
+          python3 -m pytest tests/ -q --cov=skopos --cov-report=term-missing --cov-report=json:coverage.json --tb=short --maxfail=5
+          python3 scripts/generate_coverage_badge.py coverage.json docs/badges/coverage.svg
+          echo "Coverage badge (informational): $(grep -o '[0-9]*%' docs/badges/coverage.svg | tail -1)"
+          python3 scripts/generate_tests_badge.py --rootdir . --out docs/badges/tests.json
+          echo "Tests badge (informational): $(python3 -c "import json;print(json.load(open('docs/badges/tests.json'))['message'])")"
