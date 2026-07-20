@@ -1,0 +1,22 @@
+services:
+  skopos:
+    build: .
+    container_name: aicom-skopos
+    env_file:
+      - .env
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./servers.yaml:/app/servers.yaml:ro
+      - ./agent.yaml:/app/agent.yaml:ro
+      - ./skopos.sqlite3:/app/skopos.sqlite3
+      # SSH keys (read-only) for pulling logs
+      - ~/.ssh:/root/.ssh:ro
+    environment:
+      - SKOPOS_SSH_KEY_PASSPHRASE=${SKOPOS_SSH_KEY_PASSPHRASE:-}
+      - SKOPOS_DASHBOARD_PASSWORD=${SKOPOS_DASHBOARD_PASSWORD:-}
+      - SKOPOS_SSH_STRICT_HOST_KEYS=${SKOPOS_SSH_STRICT_HOST_KEYS:-1}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
