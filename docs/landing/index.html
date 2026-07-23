@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SKOPOS — self-hosted nginx &amp; Apache analytics &amp; AI security</title>
+<meta name="description" content="SKOPOS — self-hosted analytics and AI security for your nginx and Apache fleet. Collect combined access logs, map threats, audit ports, brief with an agent — on your servers." />
+<meta property="og:title" content="SKOPOS — nginx &amp; Apache analytics &amp; AI security" />
+<meta property="og:description" content="Self-hosted nginx and Apache analytics, port-knock intelligence, security scans, and an AI agent — trilingual dashboard for your server fleet." />
+<meta property="og:url" content="https://skopos.modelmarket.dev/" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --void: #060508;
+    --void-2: #120c16;
+    --panel: rgba(18, 12, 22, 0.78);
+    --brd: rgba(255, 160, 80, 0.28);
+    --ink: #fff4e8;
+    --muted: #c4a88a;
+    --faint: #8a7060;
+    --sun: #ff8c2a;
+    --gold: #ffd56a;
+    --ember: #e84a1a;
+    --good: #5dffb0;
+    --cyan: #7b9cff;
+    --head: "Cinzel", Georgia, serif;
+    --body: "Outfit", system-ui, sans-serif;
+    --maxw: 1180px;
+    --radius: 18px;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; background: var(--void); color: var(--ink);
+    font-family: var(--body); font-size: 17px; line-height: 1.58;
+    -webkit-font-smoothing: antialiased; overflow-x: hidden;
+  }
+  .nebula, .rays, .stars {
+    position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  }
+  .nebula {
+    background:
+      radial-gradient(50vw 50vw at 18% 12%, rgba(255, 140, 42, 0.2), transparent 62%),
+      radial-gradient(44vw 44vw at 82% 20%, rgba(232, 74, 26, 0.14), transparent 60%),
+      radial-gradient(60vw 60vw at 50% 100%, rgba(255, 213, 106, 0.08), transparent 55%);
+  }
+  .rays {
+    opacity: 0.35;
+    background: conic-gradient(from 200deg at 14% 8%, transparent 0deg, rgba(255, 179, 71, 0.1) 18deg, transparent 36deg, rgba(255, 140, 42, 0.07) 52deg, transparent 70deg);
+  }
+  .stars {
+    background-image:
+      radial-gradient(1px 1px at 12% 18%, rgba(255,244,232,0.55), transparent),
+      radial-gradient(1px 1px at 28% 72%, rgba(255,213,106,0.45), transparent),
+      radial-gradient(1.5px 1.5px at 44% 34%, rgba(255,244,232,0.65), transparent),
+      radial-gradient(1px 1px at 62% 12%, rgba(255,179,71,0.5), transparent),
+      radial-gradient(1px 1px at 78% 58%, rgba(255,244,232,0.4), transparent),
+      radial-gradient(1.5px 1.5px at 88% 28%, rgba(255,213,106,0.55), transparent);
+    opacity: 0.65;
+    animation: twinkle 8s ease-in-out infinite alternate;
+  }
+  @keyframes twinkle { from { opacity: 0.4; } to { opacity: 0.85; } }
+  .wrap { position: relative; z-index: 2; max-width: var(--maxw); margin: 0 auto; padding: 0 22px; }
+
+  nav {
+    position: sticky; top: 0; z-index: 50;
+    backdrop-filter: blur(16px);
+    background: linear-gradient(180deg, rgba(6,5,8,0.96), rgba(6,5,8,0.55));
+    border-bottom: 1px solid var(--brd);
+  }
+  nav .row {
+    display: flex; align-items: center; justify-content: space-between;
+    min-height: 64px; gap: 14px; flex-wrap: wrap; padding: 8px 0;
+  }
+  .brand {
+    display: flex; align-items: center; gap: 12px;
+    font-family: var(--head); font-weight: 900; letter-spacing: 0.22em; font-size: 15px;
+    text-decoration: none; color: var(--ink);
+  }
+  .brand .orb {
+    width: 18px; height: 18px; border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #fff8e8, #ffb347 35%, var(--ember) 100%);
+    box-shadow: 0 0 18px rgba(255, 140, 42, 0.7);
+    animation: pulse-orb 3.2s ease-in-out infinite;
+  }
+  @keyframes pulse-orb { 0%,100% { transform: scale(1); } 50% { transform: scale(1.08); } }
+  .nav-links { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .nav-links a {
+    color: var(--muted); text-decoration: none; font-size: 12px; font-weight: 600;
+    letter-spacing: 0.1em; text-transform: uppercase; transition: color 0.2s;
+  }
+  .nav-links a:hover { color: var(--gold); }
+  .nav-cta {
+    color: #1a0e04 !important; background: linear-gradient(100deg, var(--sun), var(--gold));
+    padding: 8px 14px; border-radius: 999px;
+  }
+  .langsw {
+    display: inline-flex; border: 1px solid var(--brd); border-radius: 999px;
+    overflow: hidden; background: var(--panel);
+  }
+  .langsw button {
+    border: none; background: transparent; color: var(--faint);
+    font: 600 11px ui-monospace, monospace; letter-spacing: 0.06em;
+    padding: 7px 10px; cursor: pointer;
+  }
+  .langsw button.on { background: rgba(255, 140, 42, 0.18); color: var(--gold); }
+
+  header { text-align: center; padding: 72px 0 40px; }
+  .eyebrow {
+    display: inline-flex; align-items: center; gap: 10px;
+    font-family: var(--head); font-size: 11px; letter-spacing: 0.28em; text-transform: uppercase;
+    color: var(--gold); border: 1px solid rgba(255, 213, 106, 0.35);
+    background: rgba(255, 140, 42, 0.08); padding: 8px 18px; border-radius: 999px; margin-bottom: 22px;
+  }
+  .eyebrow .pip {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--good);
+    box-shadow: 0 0 0 0 rgba(93, 255, 176, 0.55); animation: ping 2.4s infinite;
+  }
+  @keyframes ping { 0% { box-shadow: 0 0 0 0 rgba(93,255,176,0.5); } 70% { box-shadow: 0 0 0 10px rgba(93,255,176,0); } 100% { box-shadow: 0 0 0 0 rgba(93,255,176,0); } }
+  h1 {
+    font-family: var(--head); font-weight: 900; font-size: clamp(34px, 7vw, 68px);
+    letter-spacing: 0.12em; margin: 0 0 12px; line-height: 1.05;
+    background: linear-gradient(95deg, #ffb347 0%, var(--gold) 45%, #fff4e8 100%);
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .tagline { max-width: 680px; margin: 0 auto 10px; font-size: clamp(17px, 2.4vw, 22px); font-weight: 300; }
+  .lede { max-width: 620px; margin: 0 auto 28px; color: var(--muted); font-size: 16px; }
+  .cta-row { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; margin-bottom: 36px; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 10px; padding: 14px 24px; border-radius: 12px;
+    font-family: var(--head); font-size: 12px; font-weight: 700; letter-spacing: 0.12em;
+    text-transform: uppercase; text-decoration: none; border: 1px solid transparent;
+    transition: transform 0.15s, box-shadow 0.25s;
+  }
+  .btn:active { transform: translateY(1px); }
+  .btn-sun { color: #1a0e04; background: linear-gradient(100deg, var(--sun), var(--gold)); box-shadow: 0 0 28px rgba(255, 140, 42, 0.4); }
+  .btn-ghost { color: var(--ink); background: var(--panel); border-color: var(--brd); }
+
+  .stats {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 14px;
+    max-width: 820px; margin: 0 auto 12px;
+  }
+  .stat {
+    padding: 16px; border-radius: var(--radius); background: var(--panel); border: 1px solid var(--brd);
+    text-align: center;
+  }
+  .stat b { display: block; font-family: var(--head); font-size: 28px; letter-spacing: 0.08em; color: var(--gold); }
+  .stat span { font-size: 12px; color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase; }
+
+  section { padding: 52px 0; }
+  .section-head { text-align: center; margin-bottom: 32px; }
+  .section-head h2 {
+    font-family: var(--head); font-size: clamp(22px, 4vw, 34px); letter-spacing: 0.14em;
+    margin: 0 0 10px; color: var(--gold);
+  }
+  .section-head p { color: var(--muted); max-width: 560px; margin: 0 auto; font-size: 15px; }
+
+  .pipeline {
+    display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; align-items: stretch;
+    position: relative;
+  }
+  @media (max-width: 900px) { .pipeline { grid-template-columns: 1fr; } }
+  .pipe-node {
+    position: relative; padding: 18px 14px; border-radius: var(--radius);
+    background: var(--panel); border: 1px solid var(--brd); text-align: center;
+    min-height: 120px; display: flex; flex-direction: column; justify-content: center; gap: 8px;
+  }
+  .pipe-node .icon { font-size: 28px; line-height: 1; }
+  .pipe-node h3 { margin: 0; font-family: var(--head); font-size: 11px; letter-spacing: 0.12em; color: var(--sun); }
+  .pipe-node p { margin: 0; font-size: 12px; color: var(--muted); line-height: 1.4; }
+  .pipe-node::after {
+    content: "→"; position: absolute; right: -14px; top: 50%; transform: translateY(-50%);
+    color: var(--gold); font-size: 18px; opacity: 0.7;
+  }
+  @media (max-width: 900px) {
+    .pipe-node::after { content: "↓"; right: auto; left: 50%; top: auto; bottom: -16px; transform: translateX(-50%); }
+  }
+  .pipe-node:last-child::after { display: none; }
+
+  .modules {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px;
+  }
+  .mod {
+    padding: 24px; border-radius: var(--radius); background: var(--panel); border: 1px solid var(--brd);
+    transition: transform 0.2s, box-shadow 0.25s, border-color 0.25s;
+  }
+  .mod:hover { transform: translateY(-3px); border-color: rgba(255, 179, 71, 0.45); box-shadow: 0 12px 40px rgba(0,0,0,0.35); }
+  .mod .badge {
+    display: inline-block; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
+    padding: 4px 10px; border-radius: 999px; margin-bottom: 12px;
+    border: 1px solid rgba(255, 140, 42, 0.35); color: var(--gold); background: rgba(255,140,42,0.08);
+  }
+  .mod h3 { margin: 0 0 8px; font-family: var(--head); font-size: 15px; letter-spacing: 0.08em; color: var(--ink); }
+  .mod p { margin: 0 0 14px; font-size: 14px; color: var(--muted); }
+  .mod ul { margin: 0; padding-left: 18px; color: var(--muted); font-size: 13px; }
+  .mod li { margin-bottom: 6px; }
+
+  .infographic {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: center;
+    padding: 28px; border-radius: calc(var(--radius) + 4px);
+    background: linear-gradient(135deg, rgba(255,140,42,0.08), rgba(18,12,22,0.9));
+    border: 1px solid var(--brd);
+  }
+  @media (max-width: 800px) { .infographic { grid-template-columns: 1fr; } }
+  .ring {
+    width: min(320px, 100%); aspect-ratio: 1; margin: 0 auto; position: relative;
+  }
+  .ring svg { width: 100%; height: 100%; }
+  .ring-label {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; text-align: center; pointer-events: none;
+  }
+  .ring-label b { font-family: var(--head); font-size: 42px; letter-spacing: 0.08em; color: var(--gold); }
+  .ring-label span { font-size: 12px; color: var(--muted); letter-spacing: 0.12em; text-transform: uppercase; }
+  .info-list { display: flex; flex-direction: column; gap: 14px; }
+  .info-row {
+    display: flex; gap: 14px; align-items: flex-start;
+    padding: 14px; border-radius: 12px; background: rgba(6,5,8,0.45); border: 1px solid rgba(255,160,80,0.15);
+  }
+  .info-row .n {
+    flex: none; width: 32px; height: 32px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--head); font-size: 14px; color: #1a0e04;
+    background: linear-gradient(100deg, var(--sun), var(--gold));
+  }
+  .info-row h4 { margin: 0 0 4px; font-size: 14px; letter-spacing: 0.04em; }
+  .info-row p { margin: 0; font-size: 13px; color: var(--muted); }
+
+  footer {
+    text-align: center; padding: 44px 0 64px; color: var(--faint); font-size: 13px;
+    border-top: 1px solid var(--brd); margin-top: 24px;
+  }
+  footer a { color: var(--muted); text-decoration: none; }
+  footer a:hover { color: var(--gold); }
+</style>
+</head>
+<body>
+<div class="nebula"></div>
+<div class="rays"></div>
+<div class="stars"></div>
+
+<nav>
+  <div class="wrap row">
+    <a class="brand" href="/"><span class="orb"></span> SKOPOS</a>
+    <div class="nav-links">
+      <a href="#features" data-i18n="nav_features">Features</a>
+      <a href="#pipeline" data-i18n="nav_pipeline">Architecture</a>
+      <a href="/app/Documentation" data-i18n="nav_docs">Documentation</a>
+      <a href="/app/" class="nav-cta" data-i18n="nav_admin">Dashboard</a>
+      <a href="https://github.com/alexar76/skopos" target="_blank" rel="noopener">GitHub</a>
+      <span class="langsw" aria-label="Language">
+        <button type="button" data-lang="en">EN</button>
+        <button type="button" data-lang="ru" class="on">RU</button>
+        <button type="button" data-lang="es">ES</button>
+        <button type="button" data-lang="fr">FR</button>
+        <button type="button" data-lang="zh">ZH</button>
+      </span>
+    </div>
+  </div>
+</nav>
+
+<header class="wrap">
+  <div class="eyebrow"><span class="pip"></span> <span data-i18n="eyebrow">Self-hosted · PostgreSQL · AI-ready</span></div>
+  <h1>SKOPOS</h1>
+  <p class="tagline" data-i18n="tagline">Nginx &amp; Apache analytics and AI security for your server fleet</p>
+  <p class="lede" data-i18n="lede">Collect access logs over SSH, enrich with GeoIP, detect port knocks and misconfigurations, and brief operators with a security agent — without sending traffic to a SaaS.</p>
+  <div class="cta-row">
+    <a class="btn btn-sun" href="/app/" data-i18n="cta_open">Open dashboard</a>
+    <a class="btn btn-ghost" href="/app/Documentation" data-i18n="cta_docs">Read documentation</a>
+    <a class="btn btn-ghost" href="/healthz" data-i18n="cta_status">Public status</a>
+  </div>
+  <div class="stats">
+    <div class="stat"><b>3+</b><span data-i18n="stat_servers">Servers in one pane</span></div>
+    <div class="stat"><b>9</b><span data-i18n="stat_security">Security tabs</span></div>
+    <div class="stat"><b>5</b><span data-i18n="stat_langs">UI languages</span></div>
+    <div class="stat"><b>24/7</b><span data-i18n="stat_collect">Log collection</span></div>
+  </div>
+</header>
+
+<section id="pipeline" class="wrap">
+  <div class="section-head">
+    <h2 data-i18n="pipe_title">Data pipeline</h2>
+    <p data-i18n="pipe_sub">From nginx and Apache access logs on factory, oracle, and metis to a single security posture view.</p>
+  </div>
+  <div class="pipeline">
+    <div class="pipe-node"><div class="icon">🛰️</div><h3 data-i18n="p1_t">Fleet</h3><p data-i18n="p1_d">SSH / Docker log sources</p></div>
+    <div class="pipe-node"><div class="icon">📥</div><h3 data-i18n="p2_t">Collect</h3><p data-i18n="p2_d">Incremental nginx &amp; Apache parsing</p></div>
+    <div class="pipe-node"><div class="icon">🗄️</div><h3 data-i18n="p3_t">Store</h3><p data-i18n="p3_d">PostgreSQL + GeoIP</p></div>
+    <div class="pipe-node"><div class="icon">📊</div><h3 data-i18n="p4_t">Analyze</h3><p data-i18n="p4_d">Traffic &amp; geography</p></div>
+    <div class="pipe-node"><div class="icon">🛡️</div><h3 data-i18n="p5_t">Secure</h3><p data-i18n="p5_d">Scans, knocks, AI agent</p></div>
+  </div>
+</section>
+
+<section id="features" class="wrap">
+  <div class="section-head">
+    <h2 data-i18n="feat_title">Three surfaces, one brain</h2>
+    <p data-i18n="feat_sub">Analytics for product teams, Security Center for operators, AI agent for triage.</p>
+  </div>
+  <div class="modules">
+    <article class="mod">
+      <span class="badge" data-i18n="m1_b">Analytics</span>
+      <h3 data-i18n="m1_t">Web traffic intelligence</h3>
+      <p data-i18n="m1_p">Period filters, geography, audience, content, referrers, and raw request log — with bot and service-noise toggles.</p>
+      <ul>
+        <li data-i18n="m1_l1">Multi-server filters &amp; path search</li>
+        <li data-i18n="m1_l2">3D globe &amp; hourly breakdowns</li>
+        <li data-i18n="m1_l3">AI ecosystem briefing card</li>
+      </ul>
+    </article>
+    <article class="mod">
+      <span class="badge" data-i18n="m2_b">Security</span>
+      <h3 data-i18n="m2_t">Fleet posture &amp; port knocks</h3>
+      <p data-i18n="m2_p">Rule-based audit, open-port matrix, knock actor tables, 3D threat map, and downloadable summary reports.</p>
+      <ul>
+        <li data-i18n="m2_l1">SSH / UFW / fail2ban classification</li>
+        <li data-i18n="m2_l2">Per-server resource gauges</li>
+        <li data-i18n="m2_l3">Scan history timeline</li>
+      </ul>
+    </article>
+    <article class="mod">
+      <span class="badge" data-i18n="m3_b">AI</span>
+      <h3 data-i18n="m3_t">Agent-assisted triage</h3>
+      <p data-i18n="m3_p">Connect OpenAI-compatible or Anthropic providers via agent.yaml — run security audits and chat from the floating widget.</p>
+      <ul>
+        <li data-i18n="m3_l1">Provider picker per run</li>
+        <li data-i18n="m3_l2">Posture-aware prompts</li>
+        <li data-i18n="m3_l3">AIMarket /healthz integration</li>
+      </ul>
+    </article>
+  </div>
+</section>
+
+<section class="wrap">
+  <div class="infographic">
+    <div class="ring">
+      <svg viewBox="0 0 200 200" aria-hidden="true">
+        <circle cx="100" cy="100" r="88" fill="none" stroke="rgba(255,160,80,0.15)" stroke-width="14"/>
+        <circle cx="100" cy="100" r="88" fill="none" stroke="url(#g)" stroke-width="14" stroke-linecap="round"
+          stroke-dasharray="420 132" transform="rotate(-90 100 100)"/>
+        <defs>
+          <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#ff8c2a"/>
+            <stop offset="100%" stop-color="#ffd56a"/>
+          </linearGradient>
+        </defs>
+      </svg>
+      <div class="ring-label"><b>76%</b><span data-i18n="ring_l">Visibility score*</span></div>
+    </div>
+    <div class="info-list">
+      <div class="info-row"><div class="n">1</div><div><h4 data-i18n="i1_t">Single pane of glass</h4><p data-i18n="i1_d">Factory, oracle, metis — unified filters, shared PostgreSQL, one login gate.</p></div></div>
+      <div class="info-row"><div class="n">2</div><div><h4 data-i18n="i2_t">Operator-first UX</h4><p data-i18n="i2_d">Premium cosmic theme, trilingual UI, docs with screenshots for every tab.</p></div></div>
+      <div class="info-row"><div class="n">3</div><div><h4 data-i18n="i3_t">Deploy on your metal</h4><p data-i18n="i3_d">Docker Compose on metis, SSH collectors to the fleet, TLS terminated at nginx.</p></div></div>
+    </div>
+  </div>
+  <p style="text-align:center;color:var(--faint);font-size:12px;margin-top:14px" data-i18n="ring_note">* Illustrative demo metric on the live fleet — open the dashboard for real posture scores.</p>
+</section>
+
+<footer class="wrap">
+  <p>
+    <span data-i18n="foot">SKOPOS — part of the AIMarket / AICOM ecosystem.</span>
+    · <a href="/app/">Dashboard</a>
+    · <a href="/app/Documentation">Docs</a>
+    · <a href="/healthz">/healthz</a>
+    · <a href="https://github.com/alexar76/skopos">GitHub</a>
+  </p>
+</footer>
+
+<script>
+const I18N = {
+  en: {
+    nav_features: "Features", nav_pipeline: "Architecture", nav_docs: "Documentation", nav_admin: "Dashboard",
+    eyebrow: "Self-hosted · PostgreSQL · AI-ready",
+    tagline: "Nginx & Apache analytics and AI security for your server fleet",
+    lede: "Collect nginx and Apache combined access logs over SSH, enrich with GeoIP, detect port knocks and misconfigurations, and brief operators with a security agent — without sending traffic to a SaaS.",
+    cta_open: "Open dashboard", cta_docs: "Read documentation", cta_status: "Public status",
+    stat_servers: "Servers in one pane", stat_security: "Security tabs", stat_langs: "UI languages", stat_collect: "Log collection",
+    pipe_title: "Data pipeline", pipe_sub: "From nginx and Apache access logs on factory, oracle, and metis to a single security posture view.",
+    p1_t: "Fleet", p1_d: "SSH / Docker log sources", p2_t: "Collect", p2_d: "Incremental nginx & Apache parsing",
+    p3_t: "Store", p3_d: "PostgreSQL + GeoIP", p4_t: "Analyze", p4_d: "Traffic & geography", p5_t: "Secure", p5_d: "Scans, knocks, AI agent",
+    feat_title: "Three surfaces, one brain", feat_sub: "Analytics for product teams, Security Center for operators, AI agent for triage.",
+    m1_b: "Analytics", m1_t: "Web traffic intelligence", m1_p: "Period filters, geography, audience, content, referrers, and raw request log — with bot and service-noise toggles.",
+    m1_l1: "Multi-server filters & path search", m1_l2: "3D globe & hourly breakdowns", m1_l3: "AI ecosystem briefing card",
+    m2_b: "Security", m2_t: "Fleet posture & port knocks", m2_p: "Rule-based audit, open-port matrix, knock actor tables, 3D threat map, and downloadable summary reports.",
+    m2_l1: "SSH / UFW / fail2ban classification", m2_l2: "Per-server resource gauges", m2_l3: "Scan history timeline",
+    m3_b: "AI", m3_t: "Agent-assisted triage", m3_p: "Connect OpenAI-compatible or Anthropic providers via agent.yaml — run security audits and chat from the floating widget.",
+    m3_l1: "Provider picker per run", m3_l2: "Posture-aware prompts", m3_l3: "AIMarket /healthz integration",
+    ring_l: "Visibility score*", ring_note: "* Illustrative demo metric on the live fleet — open the dashboard for real posture scores.",
+    i1_t: "Single pane of glass", i1_d: "Factory, oracle, metis — unified filters, shared PostgreSQL, one login gate.",
+    i2_t: "Operator-first UX", i2_d: "Premium cosmic theme, five-language UI, docs with screenshots for every tab.",
+    i3_t: "Deploy on your metal", i3_d: "Docker Compose on metis, SSH collectors to the fleet, Apache test on :8088, TLS at nginx.",
+    foot: "SKOPOS — part of the AIMarket / AICOM ecosystem."
+  },
+  ru: {
+    nav_features: "Возможности", nav_pipeline: "Архитектура", nav_docs: "Документация", nav_admin: "Дашборд",
+    eyebrow: "Self-hosted · PostgreSQL · AI-ready",
+    tagline: "Nginx и Apache — аналитика и AI-безопасность для вашего флота серверов",
+    lede: "Сбор combined access-логов nginx и Apache по SSH, GeoIP, детекция стуков в порты и misconfig, AI-брифинг для операторов — без отправки трафика в SaaS.",
+    cta_open: "Открыть дашборд", cta_docs: "Читать документацию", cta_status: "Публичный статус",
+    stat_servers: "Серверов в одном окне", stat_security: "Вкладок безопасности", stat_langs: "Языков интерфейса", stat_collect: "Сбор логов",
+    pipe_title: "Конвейер данных", pipe_sub: "От access-логов nginx и Apache на factory, oracle и metis — к единой картине безопасности.",
+    p1_t: "Флот", p1_d: "SSH / Docker источники", p2_t: "Сбор", p2_d: "Инкрементальный парсинг nginx и Apache",
+    p3_t: "Хранилище", p3_d: "PostgreSQL + GeoIP", p4_t: "Аналитика", p4_d: "Трафик и география", p5_t: "Защита", p5_d: "Сканы, стуки, AI",
+    feat_title: "Три поверхности — один мозг", feat_sub: "Аналитика для продукта, Security Center для ops, AI-агент для triage.",
+    m1_b: "Аналитика", m1_t: "Веб-аналитика", m1_p: "Периоды, география, аудитория, контент, рефереры и журнал — с фильтрами ботов и служебного шума.",
+    m1_l1: "Мульти-сервер и поиск по пути", m1_l2: "3D-глобус и почасовые срезы", m1_l3: "AI-брифинг экосистемы",
+    m2_b: "Безопасность", m2_t: "Постура флота и стуки", m2_p: "Rule-based аудит, матрица портов, таблицы акторов, 3D-карта угроз и сводные отчёты.",
+    m2_l1: "SSH / UFW / fail2ban", m2_l2: "Gauge CPU/RAM/Load", m2_l3: "История сканов",
+    m3_b: "AI", m3_t: "Агент для triage", m3_p: "OpenAI-compatible / Anthropic через agent.yaml — аудиты и чат из плавающего виджета.",
+    m3_l1: "Выбор провайдера", m3_l2: "Промпты с posture", m3_l3: "Интеграция /healthz",
+    ring_l: "Индекс видимости*", ring_note: "* Демо-метрика на живом флоте — откройте дашборд для реальных скоров.",
+    i1_t: "Единое окно", i1_d: "Factory, oracle, metis — общие фильтры, PostgreSQL, один пароль.",
+    i2_t: "UX для оператора", i2_d: "Космическая тема, пять языков, доки со скриншотами каждой вкладки.",
+    i3_t: "На вашем железе", i3_d: "Docker Compose на metis, SSH-коллекторы, тест Apache на :8088, TLS на nginx.",
+    foot: "SKOPOS — часть экосистемы AIMarket / AICOM."
+  },
+  es: {
+    nav_features: "Funciones", nav_pipeline: "Arquitectura", nav_docs: "Documentación", nav_admin: "Panel",
+    eyebrow: "Self-hosted · PostgreSQL · AI-ready",
+    tagline: "Analítica nginx y Apache y seguridad IA para su flota de servidores",
+    lede: "Recoja logs combined de nginx y Apache por SSH, enriquezca con GeoIP, detecte golpes a puertos y misconfiguraciones, y informe operadores con un agente — sin enviar tráfico a un SaaS.",
+    cta_open: "Abrir panel", cta_docs: "Leer documentación", cta_status: "Estado público",
+    stat_servers: "Servidores en un panel", stat_security: "Pestañas de seguridad", stat_langs: "Idiomas UI", stat_collect: "Recolección 24/7",
+    pipe_title: "Pipeline de datos", pipe_sub: "Desde logs nginx y Apache en factory, oracle y metis hasta una vista única de postura.",
+    p1_t: "Flota", p1_d: "Fuentes SSH / Docker", p2_t: "Recolectar", p2_d: "Parseo incremental nginx y Apache",
+    p3_t: "Almacén", p3_d: "PostgreSQL + GeoIP", p4_t: "Analizar", p4_d: "Tráfico y geografía", p5_t: "Proteger", p5_d: "Escaneos, knocks, IA",
+    feat_title: "Tres superficies, un cerebro", feat_sub: "Analítica para producto, Security Center para ops, agente IA para triage.",
+    m1_b: "Analítica", m1_t: "Inteligencia web", m1_p: "Filtros de periodo, geografía, audiencia, contenido, referrers y log crudo — con toggles de bots y ruido.",
+    m1_l1: "Filtros multi-servidor y ruta", m1_l2: "Globo 3D y desglose horario", m1_l3: "Tarjeta briefing IA",
+    m2_b: "Seguridad", m2_t: "Postura y port knocks", m2_p: "Auditoría rule-based, matriz de puertos, actores, mapa 3D e informes resumidos.",
+    m2_l1: "SSH / UFW / fail2ban", m2_l2: "Medidores CPU/RAM/Load", m2_l3: "Historial de escaneos",
+    m3_b: "IA", m3_t: "Triage asistido", m3_p: "Proveedores OpenAI-compatible / Anthropic vía agent.yaml — auditorías y chat flotante.",
+    m3_l1: "Selector de proveedor", m3_l2: "Prompts con posture", m3_l3: "Integración /healthz",
+    ring_l: "Índice de visibilidad*", ring_note: "* Métrica demo en la flota viva — abra el panel para scores reales.",
+    i1_t: "Panel único", i1_d: "Factory, oracle, metis — filtros unificados, PostgreSQL, un login.",
+    i2_t: "UX para operadores", i2_d: "Tema cósmico, cinco idiomas, docs con capturas de cada pestaña.",
+    i3_t: "En su metal", i3_d: "Docker Compose en metis, colectores SSH, Apache de prueba en :8088, TLS en nginx.",
+    foot: "SKOPOS — parte del ecosistema AIMarket / AICOM."
+  },
+  fr: {
+    nav_features: "Fonctionnalités", nav_pipeline: "Architecture", nav_docs: "Documentation", nav_admin: "Tableau de bord",
+    eyebrow: "Self-hosted · PostgreSQL · AI-ready",
+    tagline: "Analytique nginx & Apache et sécurité IA pour votre flotte de serveurs",
+    lede: "Collectez les logs d'accès combined de nginx et Apache via SSH, enrichissez avec GeoIP, détectez les port knocks et les misconfigurations, et informez les opérateurs avec un agent de sécurité — sans envoyer le trafic vers un SaaS.",
+    cta_open: "Ouvrir le tableau de bord", cta_docs: "Lire la documentation", cta_status: "Statut public",
+    stat_servers: "Serveurs dans un seul panneau", stat_security: "Onglets de sécurité", stat_langs: "Langues de l'interface", stat_collect: "Collecte de logs",
+    pipe_title: "Pipeline de données", pipe_sub: "Des logs d'accès nginx et Apache sur factory, oracle et metis vers une vue unique de la posture de sécurité.",
+    p1_t: "Flotte", p1_d: "Sources SSH / Docker", p2_t: "Collecter", p2_d: "Parsing incrémental nginx & Apache",
+    p3_t: "Stocker", p3_d: "PostgreSQL + GeoIP", p4_t: "Analyser", p4_d: "Trafic & géographie", p5_t: "Protéger", p5_d: "Scans, knocks, agent IA",
+    feat_title: "Trois surfaces, un seul cerveau", feat_sub: "Analytique pour les équipes produit, Security Center pour les opérateurs, agent IA pour le triage.",
+    m1_b: "Analytique", m1_t: "Intelligence du trafic web", m1_p: "Filtres de période, géographie, audience, contenu, référents et journal brut — avec bascules bots et bruit de service.",
+    m1_l1: "Filtres multi-serveurs & recherche par chemin", m1_l2: "Globe 3D & découpages horaires", m1_l3: "Carte briefing IA de l'écosystème",
+    m2_b: "Sécurité", m2_t: "Posture de la flotte & port knocks", m2_p: "Audit basé sur des règles, matrice des ports ouverts, tables d'acteurs de knocks, carte 3D des menaces et rapports téléchargeables.",
+    m2_l1: "Classification SSH / UFW / fail2ban", m2_l2: "Jauges de ressources par serveur", m2_l3: "Frise historique des scans",
+    m3_b: "IA", m3_t: "Triage assisté par agent", m3_p: "Connectez des fournisseurs compatibles OpenAI ou Anthropic via agent.yaml — lancez des audits de sécurité et discutez depuis le widget flottant.",
+    m3_l1: "Sélecteur de fournisseur par exécution", m3_l2: "Prompts tenant compte de la posture", m3_l3: "Intégration /healthz d'AIMarket",
+    ring_l: "Score de visibilité*", ring_note: "* Métrique de démo illustrative sur la flotte en direct — ouvrez le tableau de bord pour les scores réels.",
+    i1_t: "Vue unifiée", i1_d: "Factory, oracle, metis — filtres unifiés, PostgreSQL partagé, une seule authentification.",
+    i2_t: "UX pensée pour l'opérateur", i2_d: "Thème cosmique premium, interface en cinq langues, docs avec captures pour chaque onglet.",
+    i3_t: "Déployez sur votre matériel", i3_d: "Docker Compose sur metis, collecteurs SSH vers la flotte, test Apache sur :8088, TLS au niveau nginx.",
+    foot: "SKOPOS — partie de l'écosystème AIMarket / AICOM."
+  },
+  zh: {
+    nav_features: "功能", nav_pipeline: "架构", nav_docs: "文档", nav_admin: "仪表板",
+    eyebrow: "Self-hosted · PostgreSQL · AI-ready",
+    tagline: "面向服务器机群的 nginx 与 Apache 分析及 AI 安全",
+    lede: "通过 SSH 采集 nginx 与 Apache 的 combined 访问日志，用 GeoIP 富化，检测端口敲门与错误配置，并由安全智能体向运维简报——无需将流量发送到 SaaS。",
+    cta_open: "打开仪表板", cta_docs: "阅读文档", cta_status: "公开状态",
+    stat_servers: "统一面板中的服务器", stat_security: "安全标签页", stat_langs: "界面语言", stat_collect: "日志采集",
+    pipe_title: "数据流水线", pipe_sub: "从 factory、oracle 与 metis 上的 nginx 与 Apache 访问日志，汇聚为统一的安全态势视图。",
+    p1_t: "机群", p1_d: "SSH / Docker 日志源", p2_t: "采集", p2_d: "nginx 与 Apache 增量解析",
+    p3_t: "存储", p3_d: "PostgreSQL + GeoIP", p4_t: "分析", p4_d: "流量与地理", p5_t: "防护", p5_d: "扫描、敲门、AI 智能体",
+    feat_title: "三个界面，一个大脑", feat_sub: "面向产品团队的分析、面向运维的安全中心、用于分诊的 AI 智能体。",
+    m1_b: "分析", m1_t: "网络流量情报", m1_p: "时间段筛选、地理、受众、内容、来源以及原始请求日志——可切换机器人与服务噪声。",
+    m1_l1: "多服务器筛选与路径搜索", m1_l2: "3D 地球与逐小时分解", m1_l3: "AI 生态系统简报卡",
+    m2_b: "安全", m2_t: "机群态势与端口敲门", m2_p: "基于规则的审计、开放端口矩阵、敲门主体表、3D 威胁地图，以及可下载的汇总报告。",
+    m2_l1: "SSH / UFW / fail2ban 分类", m2_l2: "每台服务器的资源仪表", m2_l3: "扫描历史时间线",
+    m3_b: "AI", m3_t: "智能体辅助分诊", m3_p: "通过 agent.yaml 接入兼容 OpenAI 或 Anthropic 的提供方——运行安全审计并从浮动小组件中对话。",
+    m3_l1: "每次运行选择提供方", m3_l2: "感知态势的提示词", m3_l3: "AIMarket /healthz 集成",
+    ring_l: "可见性评分*", ring_note: "* 实时机群上的示意演示指标——打开仪表板查看真实态势评分。",
+    i1_t: "单一管理视图", i1_d: "Factory、oracle、metis——统一筛选、共享 PostgreSQL、单一登录入口。",
+    i2_t: "以运维为先的体验", i2_d: "高级宇宙主题、五种语言界面、每个标签页都配有截图的文档。",
+    i3_t: "部署在你自己的机器上", i3_d: "在 metis 上用 Docker Compose、向机群部署 SSH 采集器、:8088 上的 Apache 测试、nginx 层的 TLS。",
+    foot: "SKOPOS — AIMarket / AICOM 生态系统的一部分。"
+  }
+};
+
+function setLang(lang) {
+  const pack = I18N[lang] || I18N.en;
+  document.documentElement.lang = lang;
+  document.querySelectorAll("[data-i18n]").forEach(el => {
+    const k = el.getAttribute("data-i18n");
+    if (pack[k]) el.textContent = pack[k];
+  });
+  document.querySelectorAll(".langsw button").forEach(btn => {
+    btn.classList.toggle("on", btn.dataset.lang === lang);
+  });
+  try { localStorage.setItem("skopos-landing-lang", lang); } catch (_) {}
+}
+
+document.querySelectorAll(".langsw button").forEach(btn => {
+  btn.addEventListener("click", () => setLang(btn.dataset.lang));
+});
+
+(function rewriteLiveLinks() {
+  if (/modelmarket\.dev$/i.test(location.hostname)) return;
+  const base = "https://skopos.modelmarket.dev";
+  document.querySelectorAll('a[href^="/app"], a[href="/healthz"]').forEach(a => {
+    const path = a.getAttribute("href");
+    if (path) a.href = base + path;
+  });
+})();
+
+const saved = (() => { try { return localStorage.getItem("skopos-landing-lang"); } catch (_) { return null; } })();
+const browser = (navigator.language || "en").slice(0, 2);
+setLang(saved || (I18N[browser] ? browser : "ru"));
+</script>
+</body>
+</html>
