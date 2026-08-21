@@ -1,0 +1,60 @@
+db_path: "./skopos.sqlite3"
+# Production: PostgreSQL (overrides db_path when set)
+# database_url: "postgresql://skopos:secret@postgres:5432/skopos"
+# Or env: SKOPOS_DATABASE_URL=postgresql://...
+
+geoip_mmdb_path: "./GeoLite2-Country.mmdb"
+
+# Offline IP→ASN (datacenter/hosting detection). Free dump, no key:
+#   ./scripts/install_iptoasn.sh            (downloads ip2asn-combined.tsv)
+# Default lookup: $SKOPOS_ASN_TSV_PATH, ./ip2asn-combined.tsv, ./geoip/ip2asn-combined.tsv
+# asn_tsv_path: "./ip2asn-combined.tsv"  # optional — HTTP geojs/ipwho works without this
+
+poll_interval_seconds: 5
+batch_lines_per_server: 4000
+
+servers:
+  - name: "web-1"
+    source: "ssh_nginx_access_log"
+    ssh:
+      host: "203.0.113.10"
+      port: 22
+      user: "stats"
+      key_path: "~/.ssh/id_ed25519"
+      key_passphrase_env: "SKOPOS_SSH_KEY_PASSPHRASE"
+    nginx:
+      access_log_path: "/var/log/nginx/access.log"
+      auto_discover_logs: true
+      # Optional Apache (combined format):
+      # apache:
+      #   enabled: true
+      #   access_log_path: "/opt/metis/deploy/apache-test/logs/access_log"
+      #   auto_discover_logs: true
+
+  - name: "metis-test"
+    source: "ssh_http_access_log"
+    ssh:
+      host: "203.0.113.50"
+      port: 22
+      user: "stats"
+      key_path: "~/.ssh/id_ed25519"
+      key_passphrase_env: "SKOPOS_SSH_KEY_PASSPHRASE"
+    nginx:
+      access_log_path: "/var/log/nginx/access.log"
+      auto_discover_logs: true
+    apache:
+      enabled: true
+      access_log_path: "/opt/metis/deploy/apache-test/logs/access_log"
+      auto_discover_logs: true
+
+  - name: "web-2"
+    source: "ssh_nginx_access_log"
+    ssh:
+      host: "203.0.113.11"
+      port: 22
+      user: "stats"
+      key_path: "~/.ssh/id_ed25519"
+      key_passphrase_env: "SKOPOS_SSH_KEY_PASSPHRASE"
+    nginx:
+      access_log_path: "/var/log/nginx/access.log"
+      auto_discover_logs: true

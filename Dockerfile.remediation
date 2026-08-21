@@ -1,0 +1,15 @@
+# SKOPOS remediation conductor — the A2A peer that receives MOMUS's `remediate` task, drives the
+# fix, gates the redeploy on a MOMUS re-test, and signs the DeployOrder a node agent executes.
+# Build from the MONOREPO ROOT: docker build -f skopos/Dockerfile.remediation -t skopos-remediation .
+FROM python:3.11-slim
+WORKDIR /app
+
+COPY oracles/core /app/core
+COPY momus /app/momus
+COPY skopos/skopos /app/skopos
+
+RUN pip install --no-cache-dir -e /app/core -e /app/momus "fastapi>=0.115" "uvicorn>=0.30" "requests>=2.31"
+
+EXPOSE 9402
+CMD ["python", "-m", "uvicorn", "skopos.remediation.a2a_ingress:build_app", "--factory", \
+     "--host", "0.0.0.0", "--port", "9402"]
