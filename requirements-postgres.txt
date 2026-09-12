@@ -1,0 +1,2 @@
+# Production PostgreSQL driver (optional for local SQLite-only dev)
+psycopg[binary]==3.2.9
