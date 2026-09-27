@@ -1,0 +1,58 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "skopos-fleet"
+# Bumped because the tree diverged from the published 0.1.5 wheel: `pip install
+# skopos-fleet==0.1.5` served code this tree had already moved past, at the same version
+# string, so every fix in it was unpublishable and unreachable.
+version = "0.2.0"
+description = "SKOPOS (Σκοπός) — self-hosted nginx analytics and fleet security for the AICOM ecosystem."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+authors = [{ name = "AICOM (alexar76)" }]
+keywords = ["nginx", "analytics", "security", "streamlit", "aimarket", "aicom", "fleet", "ssh"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "streamlit>=1.33",
+    "pandas>=2.0",
+    "plotly>=5.18",
+    "pyyaml>=6.0",
+    "paramiko>=3.4",
+    "python-dotenv>=1.0",
+    "httpx>=0.27",
+    "geoip2>=4.8",
+    "cryptography>=44",
+    # Declared, not merely assumed. deploy_order.py imports oracle_core.signing to verify the
+    # conductor/MOMUS signature chain that gates every redeploy — with a `try/except: Signer =
+    # None` fallback whose comment says "always present in the ecosystem venv". It was never in
+    # this dependency list, so nothing guaranteed that. The [pqc] extra pulls dilithium-py, which
+    # a hybrid verifier NEEDS: verify_signature_object fail-closes on a PQ-signed order it cannot
+    # check, and this is the component that unlocks deploys.
+    "aimarket-oracle-core[pqc]>=0.2",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+postgres = ["psycopg[binary]>=3.2"]
+
+[project.scripts]
+skoposctl = "skoposctl:main"
+
+[tool.setuptools]
+py-modules = ["skoposctl"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["skopos*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
