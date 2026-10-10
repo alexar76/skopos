@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <script>
+    // Minimal Streamlit component bridge (no external CDN).
+    const Streamlit = {
+      setComponentValue(value) {
+        window.parent.postMessage({ type: "streamlit:setComponentValue", value }, "*");
+      },
+      setFrameHeight(height) {
+        window.parent.postMessage({ type: "streamlit:setFrameHeight", height }, "*");
+      },
+    };
+  </script>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      margin: 0;
+      padding: 0;
+    }
+    .wrap {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    #mic {
+      border: none;
+      border-radius: 999px;
+      width: 42px;
+      height: 42px;
+      font-size: 1.2rem;
+      cursor: pointer;
+      background: linear-gradient(135deg, #4285F4, #34A853);
+      color: #fff;
+      box-shadow: 0 4px 14px rgba(66,133,244,0.35);
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    #mic:hover { transform: scale(1.05); }
+    #mic.listening {
+      animation: pulse 1.2s infinite;
+      box-shadow: 0 0 0 6px rgba(234,67,53,0.25);
+      background: linear-gradient(135deg, #EA4335, #FF6D00);
+    }
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.08); }
+    }
+    #status {
+      font-size: 0.78rem;
+      opacity: 0.85;
+      max-width: 140px;
+      line-height: 1.2;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <button id="mic" title="Voice input">🎤</button>
+    <span id="status"></span>
+  </div>
+  <script>
+    const btn = document.getElementById("mic");
+    const status = document.getElementById("status");
+    let recognition = null;
+
+    function setStatus(msg) {
+      status.textContent = msg || "";
+    }
+
+    function sendValue(value) {
+      if (value) {
+        Streamlit.setComponentValue(value);
+        setStatus("✓ " + value.slice(0, 40) + (value.length > 40 ? "…" : ""));
+      }
+    }
+
+    btn.addEventListener("click", () => {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        setStatus("Speech API not supported in this browser");
+        return;
+      }
+      if (recognition) {
+        try { recognition.stop(); } catch (e) {}
+      }
+      recognition = new SpeechRecognition();
+      recognition.lang = navigator.language || "ru-RU";
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+      btn.classList.add("listening");
+      setStatus("Listening…");
+      recognition.onresult = (e) => {
+        btn.classList.remove("listening");
+        const text = e.results[0][0].transcript.trim();
+        sendValue(text);
+      };
+      recognition.onerror = (e) => {
+        btn.classList.remove("listening");
+        setStatus("Error: " + (e.error || "unknown"));
+      };
+      recognition.onend = () => btn.classList.remove("listening");
+      recognition.start();
+    });
+
+    Streamlit.setFrameHeight(52);
+  </script>
+</body>
+</html>
