@@ -9,7 +9,7 @@
 
 <!-- aicom-readme-badges -->
 <p align="center">
-  <a href="https://github.com/alexar76/skopos/actions/workflows/ci.yml"><img src="https://raw.githubusercontent.com/alexar76/skopos/refs/heads/main/docs/badges/ci.svg" alt="CI" /></a>
+  <a href="https://github.com/alexar76/skopos/actions/workflows/ci.yml"><img src="https://github.com/alexar76/skopos/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="https://github.com/alexar76/skopos/actions/workflows/pages.yml"><img src="https://github.com/alexar76/skopos/actions/workflows/pages.yml/badge.svg" alt="Pages deploy" /></a>
   <a href="https://skopos.modelmarket.dev/"><img src="https://raw.githubusercontent.com/alexar76/skopos/refs/heads/main/docs/badges/demo.svg" alt="Live demo status" /></a>
   <a href="https://alexar76.github.io/skopos/"><img src="https://raw.githubusercontent.com/alexar76/skopos/refs/heads/main/docs/badges/landing.svg" alt="Cosmic landing" /></a>
@@ -23,7 +23,7 @@
 
 > 🌐 **English** · [Русский](docs/README.ru.md) · [Español](docs/README.es.md) · [Français](docs/README.fr.md) · [中文](docs/README.zh.md) · [Glossary](https://github.com/alexar76/aicom/blob/main/docs/localization-glossary.md)
 
-> [WARDEN quality cycle: MOMUS → AI-Factory → SKOPOS → shared node agent → deployment](../momus/docs/quality-cycle.md).
+> [WARDEN quality cycle: MOMUS → AI-Factory → SKOPOS → shared node agent → deployment](https://github.com/alexar76/momus/blob/main/docs/quality-cycle.md).
 
 
 
