@@ -25,14 +25,17 @@ private hosts leaking into committed files — so every string that reaches the 
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import threading
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import urlsplit
 
 #: The merge-side validator rejects a record containing one of these, so redact before writing
 #: rather than discovering it when a human tries to merge the branch.
@@ -74,6 +77,25 @@ def short_signature(sig: Any) -> dict[str, Any]:
     value = str(sig.get("value") or "")
     return {k: v for k, v in sig.items() if k != "value"} | (
         {"value_prefix": value[:16] + "…"} if value else {})
+
+
+def ssh_remote_is_local(url: str) -> bool:
+    """Is an SSH git remote on this host: localhost, a loopback address, or a container name
+    (a single label, resolved on the private docker network)?"""
+    url = (url or "").strip()
+    if "://" in url:
+        host = urlsplit(url).hostname or ""
+    else:  # scp-like: [user@]host:path
+        host = url.split(":", 1)[0].rsplit("@", 1)[-1] if ":" in url else ""
+    host = host.strip("[]").lower()
+    if not host:
+        return False
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return "." not in host
 
 
 @dataclass
@@ -242,12 +264,19 @@ class GitPusher:
         ``GIT_SSH_COMMAND``."""
         argv = ["git"]
         if self.cfg.ssh_key_path:
-            # IdentitiesOnly so a stray agent key cannot be tried instead; StrictHostKeyChecking off
-            # only because the remote is a loopback container on this host, reached by name on a
-            # private docker network — there is no MITM position between them, and pinning a host key
-            # would break on every Gitea container recreate.
-            ssh = (f"ssh -i {self.cfg.ssh_key_path} -o IdentitiesOnly=yes "
-                   f"-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes")
+            # IdentitiesOnly so a stray agent key cannot be tried instead. Host keys go unchecked
+            # only for a remote on this host (loopback, or a container name on the private docker
+            # network): no MITM position there, and a pinned key would break on every Gitea
+            # recreate. The remote is configurable, though, and any other host is pinned on first
+            # use and refused if its key changes (the CWE-295 class Vulnetix found in skopos-fleet).
+            if ssh_remote_is_local(self.cfg.repo_url):
+                checking = "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+            else:
+                known = os.path.expanduser(os.environ.get("SKOPOS_KNOWN_HOSTS") or "~/.skopos/known_hosts")
+                os.makedirs(os.path.dirname(known), exist_ok=True)
+                checking = f"-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile={shlex.quote(known)}"
+            ssh = (f"ssh -i {shlex.quote(self.cfg.ssh_key_path)} -o IdentitiesOnly=yes "
+                   f"{checking} -o BatchMode=yes")
             argv = ["git", "-c", f"core.sshCommand={ssh}"]
         argv += list(args)
         if not self.cfg.ssh_key_path and self.cfg.token:

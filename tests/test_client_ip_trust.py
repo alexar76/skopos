@@ -121,3 +121,64 @@ def test_a_direct_caller_cannot_forge_headers_when_it_is_not_the_local_proxy():
         {"X-Real-IP": "1.1.1.1", "X-Forwarded-For": "1.1.1.1"}, peer="93.184.216.34"
     )
     assert got == "93.184.216.34", f"trusted a header from a non-proxy peer: {got!r}"
+
+
+# --- GCVE-110-PYPI-2026-021896: X-Real-IP was taken from anyone who reached Streamlit ----
+
+def test_a_direct_peer_cannot_name_its_own_lockout_address(monkeypatch):
+    from skopos import app_auth
+
+    # A public address: Python's ipaddress counts the documentation ranges (203.0.113.0/24 …)
+    # as private, and client_ip treats a private peer as our own proxy.
+    monkeypatch.setattr(app_auth, "_websocket_peer", lambda: "93.184.216.34")
+    keys = {_client_ip_with(monkeypatch, {"X-Real-IP": f"198.51.100.{n}"}) for n in range(1, 20)}
+    assert keys == {"93.184.216.34"}, f"a direct caller partitioned the lockout into {keys}"
+
+
+def test_behind_our_proxy_the_real_ip_header_still_counts(monkeypatch):
+    from skopos import app_auth
+
+    monkeypatch.setattr(app_auth, "_websocket_peer", lambda: "127.0.0.1")
+    assert _client_ip_with(monkeypatch, {"X-Real-IP": "198.51.100.7"}) == "198.51.100.7"
+
+
+def test_the_websocket_peer_comes_from_the_streamlit_session(monkeypatch):
+    """Streamlit 1.37 has no public API for it: runtime -> session manager -> session info ->
+    the tornado websocket handler's request.remote_ip. Pinned with stand-ins of those names."""
+    from types import SimpleNamespace
+
+    import streamlit.runtime as st_runtime
+    import streamlit.runtime.scriptrunner as scriptrunner
+
+    from skopos import app_auth
+
+    handler = SimpleNamespace(request=SimpleNamespace(remote_ip="203.0.113.51"))
+    mgr = SimpleNamespace(get_session_info=lambda sid: SimpleNamespace(client=handler)
+                          if sid == "s1" else None)
+    monkeypatch.setattr(st_runtime, "exists", lambda: True)
+    monkeypatch.setattr(st_runtime, "get_instance", lambda: SimpleNamespace(_session_mgr=mgr))
+    monkeypatch.setattr(scriptrunner, "get_script_run_ctx",
+                        lambda *a, **k: SimpleNamespace(session_id="s1"))
+    assert app_auth._websocket_peer() == "203.0.113.51"
+    monkeypatch.setattr(st_runtime, "get_instance", lambda: SimpleNamespace())
+    assert app_auth._websocket_peer() is None          # internals changed: header fallback
+
+
+def test_failures_from_many_addresses_lock_everyone(tmp_path, monkeypatch):
+    """Whatever the key, guessing is bounded: every failure also counts against all addresses."""
+    from skopos import auth_store
+
+    db = str(tmp_path / "auth.sqlite")
+    monkeypatch.setenv("SKOPOS_LOGIN_GLOBAL_MAX_ATTEMPTS", "12")
+    locked = [auth_store.register_failed_login(f"198.51.100.{n}", db_target=db) for n in range(12)]
+    assert locked[:-1] == [0] * 11 and locked[-1] > 0
+    assert auth_store.login_lockout_remaining_seconds("192.0.2.200", db_target=db) > 0
+
+
+def test_one_address_still_locks_after_its_own_five(tmp_path):
+    from skopos import auth_store
+
+    db = str(tmp_path / "auth.sqlite")
+    got = [auth_store.register_failed_login("192.0.2.9", db_target=db) for _ in range(5)]
+    assert got[-1] > 0 and auth_store.login_lockout_remaining_seconds("192.0.2.9", db_target=db) > 0
+    assert auth_store.login_lockout_remaining_seconds("192.0.2.10", db_target=db) == 0

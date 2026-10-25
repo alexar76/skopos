@@ -41,12 +41,24 @@ def test_resolve_api_fallback_off_requires_mmdb_file(tmp_path, monkeypatch):
 
 
 def test_geoip_resolver_falls_back_to_http_without_mmdb(tmp_path, monkeypatch):
+    import skopos.geoip as geoip
+    from types import SimpleNamespace
+
+    requested = []
+
+    def fake_get(url, **kwargs):
+        requested.append((url, kwargs["timeout"]))
+        return SimpleNamespace(raise_for_status=lambda: None,
+                               json=lambda: {"country_code": "US", "country": "United States"})
+
+    monkeypatch.setattr(geoip.requests, "get", fake_get)
     monkeypatch.setenv("SKOPOS_GEOIP_API_FALLBACK", "0")
     geo = GeoIPResolver(str(tmp_path / "nope.mmdb"))
     assert geo.has_mmdb is False
     assert geo.uses_http_fallback is True
     info = geo.country_for_ip("8.8.8.8")
     assert info.iso_code == "US"
+    assert requested == [("https://get.geojs.io/v1/ip/geo/8.8.8.8.json", 8)]
 
 
 def test_no_http_lookup_is_sent_past_the_deadline(monkeypatch):

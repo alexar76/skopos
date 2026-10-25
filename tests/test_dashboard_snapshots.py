@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from pathlib import Path
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -66,7 +67,7 @@ def test_cached_snapshot_never_refreshes_without_an_explicit_request():
 def test_all_analytics_dashboards_render_and_cached_revisit_is_fast(tmp_path, monkeypatch):
     monkeypatch.setenv("SKOPOS_REQUIRE_DASHBOARD_AUTH", "0")
     monkeypatch.setenv("SKOPOS_DASHBOARD_CACHE_DIR", str(tmp_path))
-    app = AppTest.from_file("dashboard.py", default_timeout=30).run()
+    app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "dashboard.py"), default_timeout=30).run()
     assert not app.exception
 
     minimums = {

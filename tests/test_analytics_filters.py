@@ -40,7 +40,7 @@ render_analytics_filters(
 """
     first_session = AppTest.from_string(script).run()
     first_session.checkbox[0].set_value(False).run()
-    assert first_session.query_params["fb"] == ["0"]
+    assert parse_filter_flag(first_session.query_params["fb"], True) is False
 
     reloaded_session = AppTest.from_string(script)
     reloaded_session.query_params = dict(first_session.query_params)

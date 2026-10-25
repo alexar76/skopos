@@ -2,6 +2,23 @@
 
 All notable changes to SKOPOS (self-hosted nginx analytics & AI security) are documented here.
 
+
+## [0.2.1] — 2026-10-25
+
+### Security
+- **Login lockout could be sidestepped where SKOPOS is reached without our proxy** (Vulnetix
+  GCVE-110-PYPI-2026-021896, CWE-307). The lockout key took `X-Real-IP` from any caller, so a client
+  that reached Streamlit directly put each guess under a new address. The key is now the websocket's
+  own peer, and proxy headers count only when that peer is the local proxy; every failed login also
+  counts against an all-addresses budget (`SKOPOS_LOGIN_GLOBAL_MAX_ATTEMPTS`, default 30 per 15 min),
+  which bounds guessing whatever the key. SSH host keys are verified by default since 0.2.0
+  (`RejectPolicy` with SKOPOS's own known_hosts); 0.1.0–0.1.4 accepted any key.
+- **Remediation `git push` accepted any SSH host key** (CWE-295, the class of the record above). The
+  push ran with `StrictHostKeyChecking=no`, so whoever could answer for the git host on the network
+  received the commit and the deploy key's signature. It now keeps the first key it sees in
+  `~/.skopos/known_hosts` (`SKOPOS_KNOWN_HOSTS`) and refuses a changed one; only a remote on this
+  machine or a single-label container name keeps the old behaviour.
+
 ## [0.1.4] — 2026-07-20
 
 ### Added

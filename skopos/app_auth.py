@@ -42,6 +42,27 @@ def dashboard_auth_required() -> bool:
     )
 
 
+def _websocket_peer() -> str | None:
+    """The TCP peer of this session's websocket (tornado's remote_ip), or None.
+
+    Streamlit 1.37 has no public API for it; this reads the session manager and gives up
+    quietly when that changes, falling back to the headers.
+    """
+    try:
+        from streamlit import runtime
+        from streamlit.runtime.scriptrunner import get_script_run_ctx
+
+        ctx = get_script_run_ctx()
+        if ctx is None or not runtime.exists():
+            return None
+        info = runtime.get_instance()._session_mgr.get_session_info(ctx.session_id)
+        request = getattr(getattr(info, "client", None), "request", None)
+        peer = getattr(request, "remote_ip", None)
+        return str(peer) if peer else None
+    except Exception:
+        return None
+
+
 def _client_ip() -> str:
     """The login-lockout key. See skopos/client_ip.py for why it is not the left XFF hop.
 
@@ -50,7 +71,7 @@ def _client_ip() -> str:
     hop our own nginx appended. Reading the left-most value let an attacker put every
     password guess in a fresh bucket and never trip the 5-attempt lockout.
     """
-    from skopos.client_ip import trusted_proxy_hops
+    from skopos.client_ip import resolve, trusted_proxy_hops
 
     try:
         headers = getattr(getattr(st, "context", None), "headers", None)
@@ -60,6 +81,13 @@ def _client_ip() -> str:
         def _h(name: str):
             return headers.get(name) or headers.get(name.lower())
 
+        # The websocket's own peer, when Streamlit lets us see it: then the headers count only
+        # if that peer is our proxy (skopos/client_ip.py). Taking X-Real-IP unconditionally let
+        # anyone who reached Streamlit directly name a fresh address per guess (Vulnetix
+        # GCVE-110-PYPI-2026-021896). The all-addresses budget in auth_store bounds that too.
+        peer = _websocket_peer()
+        if peer:
+            return resolve(peer, _h) or "unknown"
         real = _h("X-Real-IP")
         if real:
             return str(real).strip()[:64] or "unknown"

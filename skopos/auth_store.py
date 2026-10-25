@@ -334,20 +334,16 @@ def _lockout_key(client_ip: str) -> str:
     return f"{_LOCKOUT_PREFIX}{digest}"
 
 
-def login_lockout_remaining_seconds(client_ip: str, *, db_target: str | None = None) -> int:
-    """Seconds remaining on an IP lockout, or 0 if unlocked."""
-    from skopos.db import connect
+#: Every failed login also counts here, whatever address it came from. The per-address lockout
+#: is only as good as the address, and where SKOPOS is reached without our proxy in front a
+#: caller names its own (Vulnetix GCVE-110-PYPI-2026-021896, CWE-307): this budget bounds the
+#: guessing anyway.
+_ALL_ADDRESSES = "*all-addresses*"
+_DEFAULT_GLOBAL_MAX_ATTEMPTS = 30
+_DEFAULT_GLOBAL_WINDOW_SECONDS = 900
 
-    target = db_target or _settings_db_target()
-    try:
-        con = connect(target)
-        try:
-            _ensure_table(con)
-            raw = _get_setting(con, _lockout_key(client_ip))
-        finally:
-            con.close()
-    except Exception:
-        return 0
+
+def _remaining_for(raw: str | None) -> int:
     if not raw:
         return 0
     try:
@@ -355,44 +351,82 @@ def login_lockout_remaining_seconds(client_ip: str, *, db_target: str | None = N
         until = float(payload.get("until") or 0)
     except (TypeError, ValueError, json.JSONDecodeError):
         return 0
-    remaining = int(until - time.time())
-    return max(0, remaining)
+    return max(0, int(until - time.time()))
+
+
+def login_lockout_remaining_seconds(client_ip: str, *, db_target: str | None = None) -> int:
+    """Seconds remaining on this address's lockout or on the all-addresses one, or 0."""
+    from skopos.db import connect
+
+    target = db_target or _settings_db_target()
+    try:
+        con = connect(target)
+        try:
+            _ensure_table(con)
+            mine = _get_setting(con, _lockout_key(client_ip))
+            everyone = _get_setting(con, _lockout_key(_ALL_ADDRESSES))
+        finally:
+            con.close()
+    except Exception:
+        return 0
+    return max(_remaining_for(mine), _remaining_for(everyone))
+
+
+def _count_failure(con, key: str, max_attempts: int, lockout_sec: int, window_sec: int = 0) -> int:
+    """One failed login against ``key``. Returns the lockout seconds when this one locks it.
+
+    With ``window_sec`` the count starts over once its first failure is that old, so a
+    budget shared by everyone is not tripped by months of honest typos.
+    """
+    raw = _get_setting(con, key)
+    attempts, until, since = 0, 0.0, 0.0
+    if raw:
+        try:
+            payload = json.loads(raw)
+            attempts = int(payload.get("attempts") or 0)
+            until = float(payload.get("until") or 0)
+            since = float(payload.get("since") or 0)
+        except (TypeError, ValueError, json.JSONDecodeError, AttributeError):
+            attempts = 0
+    now = time.time()
+    if until > now:
+        return int(until - now)
+    if window_sec and since and now - since > window_sec:
+        attempts = 0
+    if attempts == 0:
+        since = now
+    attempts += 1
+    if attempts >= max_attempts:
+        _set_setting(con, key, json.dumps({"attempts": 0, "until": now + lockout_sec}))
+        return lockout_sec
+    _set_setting(con, key, json.dumps({"attempts": attempts, "until": 0, "since": since}))
+    return 0
 
 
 def register_failed_login(client_ip: str, *, db_target: str | None = None) -> int:
-    """Record a failed login for ``client_ip``. Returns lockout seconds if just locked."""
+    """Record a failed login for ``client_ip`` and for all addresses together.
+
+    Returns lockout seconds if either just locked (or already was).
+    """
     from skopos.db import connect
 
     max_attempts = int(os.environ.get("SKOPOS_LOGIN_MAX_ATTEMPTS", str(_DEFAULT_MAX_ATTEMPTS)))
     lockout_sec = int(os.environ.get("SKOPOS_LOGIN_LOCKOUT_SECONDS", str(_DEFAULT_LOCKOUT_SECONDS)))
     max_attempts = max(3, min(20, max_attempts))
     lockout_sec = max(60, min(3600, lockout_sec))
+    global_max = int(os.environ.get(
+        "SKOPOS_LOGIN_GLOBAL_MAX_ATTEMPTS", str(_DEFAULT_GLOBAL_MAX_ATTEMPTS)))
+    global_max = max(max_attempts, min(500, global_max))
 
     target = db_target or _settings_db_target()
-    key = _lockout_key(client_ip)
     try:
         con = connect(target)
         try:
             _ensure_table(con)
-            raw = _get_setting(con, key)
-            attempts = 0
-            until = 0.0
-            if raw:
-                try:
-                    payload = json.loads(raw)
-                    attempts = int(payload.get("attempts") or 0)
-                    until = float(payload.get("until") or 0)
-                except (TypeError, ValueError, json.JSONDecodeError):
-                    attempts = 0
-            if until > time.time():
-                return int(until - time.time())
-            attempts += 1
-            if attempts >= max_attempts:
-                until = time.time() + lockout_sec
-                _set_setting(con, key, json.dumps({"attempts": 0, "until": until}))
-                return lockout_sec
-            _set_setting(con, key, json.dumps({"attempts": attempts, "until": 0}))
-            return 0
+            mine = _count_failure(con, _lockout_key(client_ip), max_attempts, lockout_sec)
+            everyone = _count_failure(con, _lockout_key(_ALL_ADDRESSES), global_max, lockout_sec,
+                                      _DEFAULT_GLOBAL_WINDOW_SECONDS)
+            return max(mine, everyone)
         finally:
             con.close()
     except Exception:

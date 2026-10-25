@@ -7,7 +7,7 @@ name = "skopos-fleet"
 # Bumped because the tree diverged from the published 0.1.5 wheel: `pip install
 # skopos-fleet==0.1.5` served code this tree had already moved past, at the same version
 # string, so every fix in it was unpublishable and unreachable.
-version = "0.2.0"
+version = "0.2.1"
 description = "SKOPOS (Σκοπός) — self-hosted nginx analytics and fleet security for the AICOM ecosystem."
 readme = "README.md"
 license = { text = "MIT" }
@@ -21,12 +21,13 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-    "streamlit>=1.33",
+    "streamlit>=1.66.1",
     "pandas>=2.0",
+    "pillow>=13.0.0",
     "plotly>=5.18",
     "pyyaml>=6.0",
-    "paramiko>=3.4",
-    "python-dotenv>=1.0",
+    "paramiko>=5.0.0",
+    "python-dotenv>=1.2.2",
     "httpx>=0.27",
     "geoip2>=4.8",
     "cryptography>=44",
