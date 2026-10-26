@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import re
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 # Healthchecks / internal polling — hide by default in visitor views.
 # Anchored prefix match on raw UA (case-insensitive).

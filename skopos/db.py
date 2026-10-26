@@ -4,11 +4,14 @@ import hashlib
 import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Iterable
+from typing import TYPE_CHECKING, Iterable
 
 from .anonymize import scrub_ips_in_text
 from .db_connection import DbConnection, connect, connect_for_config, is_integrity_error
 from .db_dialect import adapt_sql, backend_for_target
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 SQLITE_SCHEMA = """
 PRAGMA journal_mode=WAL;
