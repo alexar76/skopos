@@ -11,7 +11,7 @@ All notable changes to SKOPOS (self-hosted nginx analytics & AI security) are do
   that reached Streamlit directly put each guess under a new address. The key is now the websocket's
   own peer, and proxy headers count only when that peer is the local proxy; every failed login also
   counts against an all-addresses budget (`SKOPOS_LOGIN_GLOBAL_MAX_ATTEMPTS`, default 30 per 15 min),
-  which bounds guessing whatever the key. SSH host keys are verified by default since 0.2.0
+  which bounds guessing whatever the key. SSH host keys are verified by default since 0.1.5
   (`RejectPolicy` with SKOPOS's own known_hosts); 0.1.0–0.1.4 accepted any key.
 - **Remediation `git push` accepted any SSH host key** (CWE-295, the class of the record above). The
   push ran with `StrictHostKeyChecking=no`, so whoever could answer for the git host on the network
