@@ -164,6 +164,7 @@ auth:
   no_password_warn: "Le tableau de bord n'est pas protégé par mot de passe. Définissez SKOPOS_DASHBOARD_PASSWORD avant d'exposer le port 8501."
   lockout: "Trop d'échecs — réessayez dans {seconds} s"
   lockout_started: "Compte verrouillé pendant {seconds} s après des échecs répétés."
+  slowed: "Beaucoup d’échecs depuis d’autres adresses — cet essai sera vérifié dans {seconds} s."
   session_expired: "Session expirée — reconnectez-vous."
   session_remaining: "Session : ~{hours} h restantes"
   session_hours: "Durée de session (heures)"

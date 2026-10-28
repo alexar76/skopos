@@ -337,10 +337,41 @@ def _lockout_key(client_ip: str) -> str:
 #: Every failed login also counts here, whatever address it came from. The per-address lockout
 #: is only as good as the address, and where SKOPOS is reached without our proxy in front a
 #: caller names its own (Vulnetix GCVE-110-PYPI-2026-021896, CWE-307): this budget bounds the
-#: guessing anyway.
+#: guessing anyway. Over it, logins slow down instead of stopping: each further failure makes the
+#: submitted try wait longer, up to a minute. The caller snapshots that delay once and then
+#: verifies the submitted password, even if other failures arrive meanwhile. Checking this
+#: as a shared admission deadline instead let anyone lock the operator out
+#: (Vulnetix GCVE-110-VULN-PYPI-2026-000644). An address that logged in successfully within
+#: SKOPOS_LOGIN_KNOWN_DAYS is never held up.
 _ALL_ADDRESSES = "*all-addresses*"
 _DEFAULT_GLOBAL_MAX_ATTEMPTS = 30
 _DEFAULT_GLOBAL_WINDOW_SECONDS = 900
+_PACE_MAX_SECONDS = 60
+_KNOWN_PREFIX = "login_known:"
+_DEFAULT_KNOWN_DAYS = 30
+
+
+def _known_key(client_ip: str) -> str:
+    digest = hashlib.sha256((client_ip or "unknown").encode("utf-8")).hexdigest()[:32]
+    return f"{_KNOWN_PREFIX}{digest}"
+
+
+def _known_days() -> float:
+    try:
+        return max(0.0, float(os.environ.get("SKOPOS_LOGIN_KNOWN_DAYS", str(_DEFAULT_KNOWN_DAYS))))
+    except ValueError:
+        return float(_DEFAULT_KNOWN_DAYS)
+
+
+def _is_known(con, client_ip: str) -> bool:
+    raw = _get_setting(con, _known_key(client_ip))
+    if not raw or not client_ip:
+        return False
+    try:
+        at = float(json.loads(raw).get("at") or 0)
+    except (TypeError, ValueError, json.JSONDecodeError, AttributeError):
+        return False
+    return time.time() - at <= _known_days() * 86400
 
 
 def _remaining_for(raw: str | None) -> int:
@@ -355,7 +386,7 @@ def _remaining_for(raw: str | None) -> int:
 
 
 def login_lockout_remaining_seconds(client_ip: str, *, db_target: str | None = None) -> int:
-    """Seconds remaining on this address's lockout or on the all-addresses one, or 0."""
+    """Seconds remaining on this address's own lockout, or 0."""
     from skopos.db import connect
 
     target = db_target or _settings_db_target()
@@ -364,12 +395,35 @@ def login_lockout_remaining_seconds(client_ip: str, *, db_target: str | None = N
         try:
             _ensure_table(con)
             mine = _get_setting(con, _lockout_key(client_ip))
+        finally:
+            con.close()
+    except Exception:
+        return 0
+    return _remaining_for(mine)
+
+
+def login_pace_seconds(client_ip: str, *, db_target: str | None = None) -> int:
+    """Delay to apply once to a submitted attempt (at most a minute), or 0.
+
+    This is not an admission/lockout deadline: callers must allow the attempt to proceed
+    after its own delay, without checking this value again. Recently successful addresses
+    are exempt.
+    """
+    from skopos.db import connect
+
+    target = db_target or _settings_db_target()
+    try:
+        con = connect(target)
+        try:
+            _ensure_table(con)
+            if _is_known(con, client_ip):
+                return 0
             everyone = _get_setting(con, _lockout_key(_ALL_ADDRESSES))
         finally:
             con.close()
     except Exception:
         return 0
-    return max(_remaining_for(mine), _remaining_for(everyone))
+    return min(_PACE_MAX_SECONDS, _remaining_for(everyone))
 
 
 def _count_failure(con, key: str, max_attempts: int, lockout_sec: int, window_sec: int = 0) -> int:
@@ -403,10 +457,38 @@ def _count_failure(con, key: str, max_attempts: int, lockout_sec: int, window_se
     return 0
 
 
+def _pace_failure(con, budget: int, window_sec: int) -> int:
+    """One failed login against the all-addresses budget. Over the budget it sets how long the next
+    try from an address that has not logged in before waits: 2, 4, 8 … seconds, at most a minute.
+    Returns that wait, or 0 within the budget."""
+    key = _lockout_key(_ALL_ADDRESSES)
+    raw = _get_setting(con, key)
+    attempts, since = 0, 0.0
+    if raw:
+        try:
+            payload = json.loads(raw)
+            attempts = int(payload.get("attempts") or 0)
+            since = float(payload.get("since") or 0)
+        except (TypeError, ValueError, json.JSONDecodeError, AttributeError):
+            attempts, since = 0, 0.0
+    now = time.time()
+    if since and now - since > window_sec:
+        attempts, since = 0, 0.0
+    if attempts == 0:
+        since = now
+    attempts += 1
+    over = attempts - budget
+    wait = 0 if over <= 0 else min(_PACE_MAX_SECONDS, 2 ** min(over, 6))
+    _set_setting(con, key, json.dumps({"attempts": attempts, "since": since,
+                                       "until": now + wait if wait else 0}))
+    return wait
+
+
 def register_failed_login(client_ip: str, *, db_target: str | None = None) -> int:
     """Record a failed login for ``client_ip`` and for all addresses together.
 
-    Returns lockout seconds if either just locked (or already was).
+    Returns this address's lockout seconds if it just locked (or already was). Failures over the
+    all-addresses budget slow logins down instead (``login_pace_seconds``); they lock no one.
     """
     from skopos.db import connect
 
@@ -424,9 +506,8 @@ def register_failed_login(client_ip: str, *, db_target: str | None = None) -> in
         try:
             _ensure_table(con)
             mine = _count_failure(con, _lockout_key(client_ip), max_attempts, lockout_sec)
-            everyone = _count_failure(con, _lockout_key(_ALL_ADDRESSES), global_max, lockout_sec,
-                                      _DEFAULT_GLOBAL_WINDOW_SECONDS)
-            return max(mine, everyone)
+            _pace_failure(con, global_max, _DEFAULT_GLOBAL_WINDOW_SECONDS)
+            return mine
         finally:
             con.close()
     except Exception:
@@ -434,6 +515,8 @@ def register_failed_login(client_ip: str, *, db_target: str | None = None) -> in
 
 
 def clear_login_lockout(client_ip: str, *, db_target: str | None = None) -> None:
+    """After a successful login: clear this address's lockout and remember it as known, so failures
+    from other addresses never hold it up (``login_pace_seconds``)."""
     from skopos.db import connect
 
     target = db_target or _settings_db_target()
@@ -442,6 +525,8 @@ def clear_login_lockout(client_ip: str, *, db_target: str | None = None) -> None
         try:
             _ensure_table(con)
             _delete_setting(con, _lockout_key(client_ip))
+            if client_ip:
+                _set_setting(con, _known_key(client_ip), json.dumps({"at": time.time()}))
         finally:
             con.close()
     except Exception:
@@ -449,6 +534,7 @@ def clear_login_lockout(client_ip: str, *, db_target: str | None = None) -> None
 
 
 __all__ = [
+    "login_pace_seconds",
     "hash_password",
     "verify_password",
     "generate_strong_password",

@@ -163,6 +163,7 @@ auth:
   no_password_warn: "El panel no tiene contraseña. Configure SKOPOS_DASHBOARD_PASSWORD antes de exponer el puerto 8501."
   lockout: "Demasiados intentos — reintente en {seconds}s"
   lockout_started: "Acceso bloqueado {seconds}s tras intentos fallidos."
+  slowed: "Muchos intentos fallidos desde otras direcciones: comprobaremos este intento en {seconds} s."
   session_expired: "Sesión expirada — inicie sesión de nuevo."
   session_remaining: "Sesión ~{hours}h restantes"
   session_hours: "Duración de sesión (horas)"

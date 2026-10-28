@@ -12,6 +12,7 @@ from skopos.auth_store import (
     clear_login_lockout,
     dashboard_password_configured,
     login_lockout_remaining_seconds,
+    login_pace_seconds,
     password_expired,
     password_expires_in_days,
     register_failed_login,
@@ -252,6 +253,24 @@ def _check_login_lockout(locale: str) -> None:
     st.stop()
 
 
+def _pace_login_attempt(locale: str) -> None:
+    """Delay this submitted attempt once, without letting other failures postpone it.
+
+    A shared ``until`` checked before rendering the form was still a global lockout:
+    another address could move it forward before the operator reached password verification
+    (GCVE-110-VULN-PYPI-2026-000644). Snapshot the bounded delay at admission instead. The
+    monotonic deadline belongs to this invocation and is never extended by later failures.
+    Passwords stay in the submitting call, rather than being copied into pending state.
+    """
+    pace = login_pace_seconds(_client_ip())
+    if pace <= 0:
+        return
+    deadline = time.monotonic() + pace
+    st.info(t("auth.slowed", locale, seconds=pace))
+    while (remaining := deadline - time.monotonic()) > 0:
+        time.sleep(remaining)
+
+
 def _register_failed_login(locale: str) -> None:
     locked_for = register_failed_login(_client_ip())
     attempts = int(st.session_state.get("_skopos_auth_attempts") or 0) + 1
@@ -292,6 +311,10 @@ def _render_login_gate(locale: str) -> None:
         )
         submitted = st.form_submit_button(t("auth.login", locale), type="primary", use_container_width=True)
         if submitted:
+            _pace_login_attempt(locale)
+            # Another attempt from this address may have exhausted its own budget while
+            # this one waited. Failures from other addresses cannot close this gate.
+            _check_login_lockout(locale)
             if verify_dashboard_password(pwd):
                 clear_login_lockout(_client_ip())
                 st.session_state._skopos_auth_ok = True

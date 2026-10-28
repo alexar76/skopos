@@ -163,6 +163,7 @@ auth:
   no_password_warn: "Дашборд без пароля. Установите SKOPOS_DASHBOARD_PASSWORD перед публикацией порта 8501."
   lockout: "Слишком много попыток — повторите через {seconds} с"
   lockout_started: "Вход заблокирован на {seconds} с после неудачных попыток."
+  slowed: "Много неудачных входов с других адресов — проверим эту попытку через {seconds} с."
   session_expired: "Сессия истекла — войдите снова."
   session_remaining: "Сессия ~{hours} ч"
   session_hours: "Время жизни сессии (часы)"

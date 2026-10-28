@@ -79,9 +79,11 @@ def short_signature(sig: Any) -> dict[str, Any]:
         {"value_prefix": value[:16] + "…"} if value else {})
 
 
-def ssh_remote_is_local(url: str) -> bool:
-    """Is an SSH git remote on this host: localhost, a loopback address, or a container name
-    (a single label, resolved on the private docker network)?"""
+def ssh_remote_is_loopback(url: str) -> bool:
+    """Is an SSH git remote this host itself: `localhost` or a loopback address?
+
+    A container name is not: a single label resolves on whatever network the container shares, and
+    whoever answers for that name there receives the push (Vulnetix GCVE-110-VULN-PYPI-2026-000639)."""
     url = (url or "").strip()
     if "://" in url:
         host = urlsplit(url).hostname or ""
@@ -95,7 +97,14 @@ def ssh_remote_is_local(url: str) -> bool:
     try:
         return ipaddress.ip_address(host).is_loopback
     except ValueError:
-        return "." not in host
+        return False
+
+
+def skip_host_key_check(url: str) -> bool:
+    """Only a loopback Gitea, and only when the operator says so: SKOPOS_GIT_SKIP_HOST_KEY_LOOPBACK=1.
+    Every other remote, single-label container names included, is pinned on first use."""
+    flag = (os.environ.get("SKOPOS_GIT_SKIP_HOST_KEY_LOOPBACK") or "").strip().lower()
+    return flag in ("1", "true", "yes", "on") and ssh_remote_is_loopback(url)
 
 
 @dataclass
@@ -264,12 +273,12 @@ class GitPusher:
         ``GIT_SSH_COMMAND``."""
         argv = ["git"]
         if self.cfg.ssh_key_path:
-            # IdentitiesOnly so a stray agent key cannot be tried instead. Host keys go unchecked
-            # only for a remote on this host (loopback, or a container name on the private docker
-            # network): no MITM position there, and a pinned key would break on every Gitea
-            # recreate. The remote is configurable, though, and any other host is pinned on first
-            # use and refused if its key changes (the CWE-295 class Vulnetix found in skopos-fleet).
-            if ssh_remote_is_local(self.cfg.repo_url):
+            # IdentitiesOnly so a stray agent key cannot be tried instead. Every remote's host key is
+            # pinned on first use and refused if it changes (CWE-295), a container name included: it
+            # resolves on a shared network (Vulnetix GCVE-110-VULN-PYPI-2026-000639). Keep Gitea's SSH
+            # host keys in its data volume and a recreate keeps them. Only a loopback Gitea may go
+            # unchecked, and only with SKOPOS_GIT_SKIP_HOST_KEY_LOOPBACK=1.
+            if skip_host_key_check(self.cfg.repo_url):
                 checking = "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
             else:
                 known = os.path.expanduser(os.environ.get("SKOPOS_KNOWN_HOSTS") or "~/.skopos/known_hosts")

@@ -3,6 +3,25 @@
 All notable changes to SKOPOS (self-hosted nginx analytics & AI security) are documented here.
 
 
+## [0.2.2] — 2026-10-28
+
+### Security
+- **The all-addresses login budget let anyone lock the operator out** (Vulnetix GCVE-110-VULN-PYPI-2026-000644,
+  new in 0.2.1). Over `SKOPOS_LOGIN_GLOBAL_MAX_ATTEMPTS` logins now slow down instead of stopping: each
+  further failure makes the next try from a new address wait longer (2, 4, 8 … seconds, at most a minute),
+  and an address that logged in successfully within `SKOPOS_LOGIN_KNOWN_DAYS` (default 30) never waits.
+  Each submitted attempt takes one bounded delay before its password is checked; failures elsewhere
+  cannot move that attempt's deadline or hide the login form. The per-address lockout is rechecked
+  after the delay, so concurrent guesses from the same address still exhaust its own budget.
+- **Remediation `git push` skipped the host-key check for single-label remotes** (Vulnetix
+  GCVE-110-VULN-PYPI-2026-000639). A container name resolves on whatever network the container shares.
+  Every SSH remote is now pinned on first use and refused if its key changes; only a loopback Gitea may
+  skip the check, and only with `SKOPOS_GIT_SKIP_HOST_KEY_LOOPBACK=1`. Keep Gitea's SSH host keys in its
+  data volume and a recreate keeps them.
+- **Proxy headers were taken from any private peer** (the class of Vulnetix GCVE-110-VULN-PYPI-2026-000636).
+  `X-Real-IP` / `X-Forwarded-For` now count only from `SKOPOS_TRUSTED_PROXIES` (addresses, CIDRs, host names,
+  `gateway`; loopback by default). The compose file trusts `gateway`, the host's nginx.
+
 ## [0.2.1] — 2026-10-25
 
 ### Security

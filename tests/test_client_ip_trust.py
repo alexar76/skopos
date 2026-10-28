@@ -164,15 +164,38 @@ def test_the_websocket_peer_comes_from_the_streamlit_session(monkeypatch):
     assert app_auth._websocket_peer() is None          # internals changed: header fallback
 
 
-def test_failures_from_many_addresses_lock_everyone(tmp_path, monkeypatch):
-    """Whatever the key, guessing is bounded: every failure also counts against all addresses."""
+def test_failures_from_many_addresses_slow_logins_down_and_lock_no_one(tmp_path, monkeypatch):
+    """Whatever the key, guessing is bounded: every failure also counts against all addresses. Over
+    that budget a new address waits a little before its next try, at most a minute; the budget used
+    to lock every address out, the operator's too (Vulnetix GCVE-110-VULN-PYPI-2026-000644)."""
     from skopos import auth_store
 
     db = str(tmp_path / "auth.sqlite")
     monkeypatch.setenv("SKOPOS_LOGIN_GLOBAL_MAX_ATTEMPTS", "12")
     locked = [auth_store.register_failed_login(f"198.51.100.{n}", db_target=db) for n in range(12)]
-    assert locked[:-1] == [0] * 11 and locked[-1] > 0
-    assert auth_store.login_lockout_remaining_seconds("192.0.2.200", db_target=db) > 0
+    assert locked == [0] * 12
+    assert auth_store.login_lockout_remaining_seconds("192.0.2.200", db_target=db) == 0
+    assert auth_store.login_pace_seconds("192.0.2.200", db_target=db) == 0  # within the budget
+    auth_store.register_failed_login("198.51.100.99", db_target=db)
+    assert 0 < auth_store.login_pace_seconds("192.0.2.200", db_target=db) <= 2
+    for n in range(30):
+        auth_store.register_failed_login(f"198.51.101.{n}", db_target=db)
+    assert 30 < auth_store.login_pace_seconds("192.0.2.200", db_target=db) <= 60
+    assert auth_store.login_lockout_remaining_seconds("192.0.2.200", db_target=db) == 0
+
+
+def test_an_address_that_logged_in_is_never_held_up(tmp_path, monkeypatch):
+    from skopos import auth_store
+
+    db = str(tmp_path / "auth.sqlite")
+    auth_store.clear_login_lockout("192.0.2.1", db_target=db)  # the operator logged in from here
+    monkeypatch.setenv("SKOPOS_LOGIN_GLOBAL_MAX_ATTEMPTS", "12")
+    for n in range(40):
+        auth_store.register_failed_login(f"198.51.100.{n}", db_target=db)
+    assert auth_store.login_pace_seconds("192.0.2.1", db_target=db) == 0
+    assert auth_store.login_pace_seconds("192.0.2.200", db_target=db) > 0
+    monkeypatch.setenv("SKOPOS_LOGIN_KNOWN_DAYS", "0")  # remembered for no time at all
+    assert auth_store.login_pace_seconds("192.0.2.1", db_target=db) > 0
 
 
 def test_one_address_still_locks_after_its_own_five(tmp_path):
@@ -182,3 +205,30 @@ def test_one_address_still_locks_after_its_own_five(tmp_path):
     got = [auth_store.register_failed_login("192.0.2.9", db_target=db) for _ in range(5)]
     assert got[-1] > 0 and auth_store.login_lockout_remaining_seconds("192.0.2.9", db_target=db) > 0
     assert auth_store.login_lockout_remaining_seconds("192.0.2.10", db_target=db) == 0
+
+
+def test_trusted_proxies_are_loopback_unless_named(monkeypatch, tmp_path):
+    # the class of Vulnetix GCVE-110-VULN-PYPI-2026-000636: X-Real-IP / X-Forwarded-For were taken from any
+    # private peer, so a neighbour on the same docker network or LAN named its own address.
+    import ipaddress
+    import sys
+    import skopos.client_ip as trust
+
+    monkeypatch.delenv("SKOPOS_TRUSTED_PROXIES", raising=False)
+    assert trust._peer_is_trusted_proxy("127.0.0.1") and trust._peer_is_trusted_proxy("::1")
+    for neighbour in ("172.18.0.7", "10.0.0.5", "192.168.1.20", "fe80::1", "not-an-address", ""):
+        assert not trust._peer_is_trusted_proxy(neighbour), neighbour
+    monkeypatch.setenv("SKOPOS_TRUSTED_PROXIES", "10.1.0.0/16, 172.18.0.9")
+    assert trust._peer_is_trusted_proxy("10.1.2.3") and trust._peer_is_trusted_proxy("172.18.0.9")
+    assert not trust._peer_is_trusted_proxy("127.0.0.1")  # the list replaces the default
+    route = tmp_path / "route"
+    gateway_hex = "010012AC" if sys.byteorder == "little" else "AC120001"  # 172.18.0.1
+    route.write_text("Iface\tDestination\tGateway\tFlags\n"
+                     "eth0\t00000000\t" + gateway_hex + "\t0003\n")
+    monkeypatch.setattr(trust, "_PROC_NET_ROUTE", str(route))
+    monkeypatch.setenv("SKOPOS_TRUSTED_PROXIES", "gateway")
+    assert trust._peer_is_trusted_proxy("172.18.0.1") and not trust._peer_is_trusted_proxy("172.18.0.2")
+    named = {"frontend": (ipaddress.ip_address("172.18.0.5"),)}
+    monkeypatch.setattr(trust, "_proxy_name_addresses", lambda name: named.get(name, ()))
+    monkeypatch.setenv("SKOPOS_TRUSTED_PROXIES", "127.0.0.1, frontend")
+    assert trust._peer_is_trusted_proxy("172.18.0.5") and not trust._peer_is_trusted_proxy("172.18.0.6")

@@ -97,6 +97,15 @@ streamlit run dashboard.py
   passwords expire after 90 days with a Telegram reminder. See
   [configuration → Dashboard password & rotation](docs/en/guide/configuration.md)
 - **SKOPOS_SSH_STRICT_HOST_KEYS=1** — verify SSH host keys (recommended)
+- **Login limits** — 5 failures lock one address for 5 minutes; failures from many addresses
+  together (`SKOPOS_LOGIN_GLOBAL_MAX_ATTEMPTS`, 30 per 15 min) slow new addresses down, at most a
+  minute per submitted try. The password is checked after that attempt's own delay even if other
+  addresses keep failing; the login form stays available. An address that logged in within
+  `SKOPOS_LOGIN_KNOWN_DAYS` (30) never waits.
+- **Proxy headers** — `X-Real-IP` / `X-Forwarded-For` count only from `SKOPOS_TRUSTED_PROXIES`
+  (loopback by default; the compose file adds `gateway`, the host's nginx)
+- **Remediation git push** — every SSH remote's host key is pinned on first use; only a loopback
+  Gitea may skip it, with `SKOPOS_GIT_SKIP_HOST_KEY_LOOPBACK=1`
 - See [docs/audit-findings.md](docs/audit-findings.md)
 
 ### Documentation

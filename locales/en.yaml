@@ -164,6 +164,7 @@ auth:
   no_password_warn: "Dashboard is not password-protected. Set SKOPOS_DASHBOARD_PASSWORD before exposing port 8501."
   lockout: "Too many failed attempts — retry in {seconds}s"
   lockout_started: "Account locked for {seconds}s after repeated failures."
+  slowed: "Many failed logins from other addresses — checking this attempt in {seconds}s."
   session_expired: "Session expired — sign in again."
   session_remaining: "Session ~{hours}h remaining"
   session_hours: "Session lifetime (hours)"

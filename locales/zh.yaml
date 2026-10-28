@@ -164,6 +164,7 @@ auth:
   no_password_warn: "仪表板未设置密码保护。请在暴露 8501 端口之前设置 SKOPOS_DASHBOARD_PASSWORD。"
   lockout: "失败次数过多 — 请在 {seconds} 秒后重试"
   lockout_started: "多次失败后账户已锁定 {seconds} 秒。"
+  slowed: "其他地址登录失败过多——将在 {seconds} 秒后验证本次尝试。"
   session_expired: "会话已过期 — 请重新登录。"
   session_remaining: "会话剩余约 {hours} 小时"
   session_hours: "会话有效期（小时）"
