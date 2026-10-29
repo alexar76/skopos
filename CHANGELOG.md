@@ -3,6 +3,23 @@
 All notable changes to SKOPOS (self-hosted nginx analytics & AI security) are documented here.
 
 
+## [0.2.3] — 2026-10-29
+
+### Security
+- **Dashboard login addresses could still be forged on Streamlit 1.66.1** (remaining exposure in
+  Vulnetix GCVE-110-PYPI-2026-021896). The dashboard read the old Tornado session client's
+  `request.remote_ip`, which the current Starlette session client does not expose. With no peer
+  found, the dashboard accepted `X-Real-IP` / `X-Forwarded-For`
+  without verifying `SKOPOS_TRUSTED_PROXIES`. A caller reaching the dashboard directly, or through
+  a proxy that preserved those headers, could choose a per-address login bucket and claim a known
+  address's pacing exemption. The dashboard now reads the actual socket peer from Uvicorn's
+  transport and applies the configured proxy allowlist. It does not use Streamlit's context IP:
+  Uvicorn may already have rewritten that value from forwarded headers. This also preserves an
+  empty `SKOPOS_TRUSTED_PROXIES` or `SKOPOS_TRUSTED_PROXY_HOPS=0`. An unavailable or invalid peer uses the shared
+  `unknown` bucket and never grants authority to address headers. The existing signed-session-cookie
+  recovery, per-address lockout and bounded all-addresses login delay remain in place.
+
+
 ## [0.2.2] — 2026-10-28
 
 ### Security

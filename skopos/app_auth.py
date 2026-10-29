@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import ipaddress
 import json
 import os
 import time
@@ -44,10 +45,13 @@ def dashboard_auth_required() -> bool:
 
 
 def _websocket_peer() -> str | None:
-    """The TCP peer of this session's websocket (tornado's remote_ip), or None.
+    """The websocket's socket peer, before any forwarded-header middleware.
 
-    Streamlit 1.37 has no public API for it; this reads the session manager and gives up
-    quietly when that changes, falling back to the headers.
+    Streamlit's Starlette client keeps Uvicorn's bound ASGI receive method. Its
+    transport retains the actual peer even when Uvicorn has replaced scope["client"]
+    from X-Forwarded-For. Neither st.context.ip_address nor client_context.remote_ip
+    can establish proxy trust. If the server adapter changes, fail closed rather
+    than recovering an address from client-supplied headers.
     """
     try:
         from streamlit import runtime
@@ -56,50 +60,41 @@ def _websocket_peer() -> str | None:
         ctx = get_script_run_ctx()
         if ctx is None or not runtime.exists():
             return None
-        info = runtime.get_instance()._session_mgr.get_session_info(ctx.session_id)
-        request = getattr(getattr(info, "client", None), "request", None)
-        peer = getattr(request, "remote_ip", None)
-        return str(peer) if peer else None
+        client = runtime.get_instance().get_client(ctx.session_id)
+        websocket = getattr(client, "_websocket", None)
+        receive = getattr(websocket, "_receive", None)
+        protocol = getattr(receive, "__self__", None)
+        transport = getattr(protocol, "transport", None)
+        peer = transport.get_extra_info("peername") if transport is not None else None
+        if not isinstance(peer, tuple) or not peer or not isinstance(peer[0], str):
+            return None
+        return str(ipaddress.ip_address(peer[0]))
     except Exception:
         return None
 
 
 def _client_ip() -> str:
-    """The login-lockout key. See skopos/client_ip.py for why it is not the left XFF hop.
+    """Key login budgets by the socket peer, or by its trusted proxy's headers.
 
-    Streamlit gives no direct peer address, so the header path is taken unconditionally here
-    — but X-Real-IP is preferred and X-Forwarded-For is counted from the RIGHT, which is the
-    hop our own nginx appended. Reading the left-most value let an attacker put every
-    password guess in a fresh bucket and never trip the 5-attempt lockout.
+    Unknown peers share one bucket; headers cannot establish their identity or
+    claim a recently successful address's exemption from login pacing.
     """
-    from skopos.client_ip import resolve, trusted_proxy_hops
+    from skopos.client_ip import resolve
 
+    peer = _websocket_peer()
+    if not peer:
+        return "unknown"
     try:
         headers = getattr(getattr(st, "context", None), "headers", None)
-        if headers is None:
-            return "unknown"
 
         def _h(name: str):
-            return headers.get(name) or headers.get(name.lower())
+            if headers is not None:
+                return headers.get(name) or headers.get(name.lower())
+            return None
 
-        # The websocket's own peer, when Streamlit lets us see it: then the headers count only
-        # if that peer is our proxy (skopos/client_ip.py). Taking X-Real-IP unconditionally let
-        # anyone who reached Streamlit directly name a fresh address per guess (Vulnetix
-        # GCVE-110-PYPI-2026-021896). The all-addresses budget in auth_store bounds that too.
-        peer = _websocket_peer()
-        if peer:
-            return resolve(peer, _h) or "unknown"
-        real = _h("X-Real-IP")
-        if real:
-            return str(real).strip()[:64] or "unknown"
-        xff = _h("X-Forwarded-For") or ""
-        hops = [h.strip() for h in str(xff).split(",") if h.strip()]
-        if hops:
-            want = trusted_proxy_hops() or 1
-            return (hops[-want] if len(hops) >= want else hops[-1])[:64] or "unknown"
+        return resolve(peer, _h)
     except Exception:
-        pass
-    return "unknown"
+        return peer
 
 
 def _token_secret() -> bytes:

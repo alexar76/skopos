@@ -34,9 +34,10 @@ class _Ctx:
 
 # --- the Streamlit dashboard login lockout key ---------------------------------------
 
-def _client_ip_with(monkeypatch, headers):
+def _client_ip_with(monkeypatch, headers, *, peer="127.0.0.1"):
     from skopos import app_auth
 
+    monkeypatch.setattr(app_auth, "_websocket_peer", lambda: peer)
     monkeypatch.setattr(app_auth.st, "context", _Ctx(headers), raising=False)
     return app_auth._client_ip()
 
@@ -126,25 +127,17 @@ def test_a_direct_caller_cannot_forge_headers_when_it_is_not_the_local_proxy():
 # --- GCVE-110-PYPI-2026-021896: X-Real-IP was taken from anyone who reached Streamlit ----
 
 def test_a_direct_peer_cannot_name_its_own_lockout_address(monkeypatch):
-    from skopos import app_auth
-
-    # A public address: Python's ipaddress counts the documentation ranges (203.0.113.0/24 …)
-    # as private, and client_ip treats a private peer as our own proxy.
-    monkeypatch.setattr(app_auth, "_websocket_peer", lambda: "93.184.216.34")
-    keys = {_client_ip_with(monkeypatch, {"X-Real-IP": f"198.51.100.{n}"}) for n in range(1, 20)}
+    keys = {_client_ip_with(monkeypatch, {"X-Real-IP": f"198.51.100.{n}"}, peer="93.184.216.34")
+            for n in range(1, 20)}
     assert keys == {"93.184.216.34"}, f"a direct caller partitioned the lockout into {keys}"
 
 
 def test_behind_our_proxy_the_real_ip_header_still_counts(monkeypatch):
-    from skopos import app_auth
-
-    monkeypatch.setattr(app_auth, "_websocket_peer", lambda: "127.0.0.1")
     assert _client_ip_with(monkeypatch, {"X-Real-IP": "198.51.100.7"}) == "198.51.100.7"
 
 
-def test_the_websocket_peer_comes_from_the_streamlit_session(monkeypatch):
-    """Streamlit 1.37 has no public API for it: runtime -> session manager -> session info ->
-    the tornado websocket handler's request.remote_ip. Pinned with stand-ins of those names."""
+def test_an_unsupported_streamlit_session_does_not_restore_header_trust(monkeypatch):
+    """An older server adapter cannot silently re-enable the unsafe fallback."""
     from types import SimpleNamespace
 
     import streamlit.runtime as st_runtime
@@ -153,15 +146,17 @@ def test_the_websocket_peer_comes_from_the_streamlit_session(monkeypatch):
     from skopos import app_auth
 
     handler = SimpleNamespace(request=SimpleNamespace(remote_ip="203.0.113.51"))
-    mgr = SimpleNamespace(get_session_info=lambda sid: SimpleNamespace(client=handler)
-                          if sid == "s1" else None)
     monkeypatch.setattr(st_runtime, "exists", lambda: True)
-    monkeypatch.setattr(st_runtime, "get_instance", lambda: SimpleNamespace(_session_mgr=mgr))
+    monkeypatch.setattr(st_runtime, "get_instance", lambda: SimpleNamespace(
+        get_client=lambda sid: handler if sid == "s1" else None))
     monkeypatch.setattr(scriptrunner, "get_script_run_ctx",
                         lambda *a, **k: SimpleNamespace(session_id="s1"))
-    assert app_auth._websocket_peer() == "203.0.113.51"
+    monkeypatch.setattr(app_auth.st, "context", _Ctx({"X-Real-IP": "198.51.100.7"}), raising=False)
+    assert app_auth._websocket_peer() is None
+    assert app_auth._client_ip() == "unknown"
     monkeypatch.setattr(st_runtime, "get_instance", lambda: SimpleNamespace())
-    assert app_auth._websocket_peer() is None          # internals changed: header fallback
+    assert app_auth._websocket_peer() is None
+    assert app_auth._client_ip() == "unknown"
 
 
 def test_failures_from_many_addresses_slow_logins_down_and_lock_no_one(tmp_path, monkeypatch):

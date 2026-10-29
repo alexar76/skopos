@@ -4,10 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "skopos-fleet"
-# Bumped because the tree diverged from the published 0.1.5 wheel: `pip install
-# skopos-fleet==0.1.5` served code this tree had already moved past, at the same version
-# string, so every fix in it was unpublishable and unreachable.
-version = "0.2.2"
+# Dashboard socket-peer enforcement, including Streamlit's Starlette server.
+version = "0.2.3"
 description = "SKOPOS (Σκοπός) — self-hosted nginx analytics and fleet security for the AICOM ecosystem."
 readme = "README.md"
 license = { text = "MIT" }
