@@ -2,7 +2,7 @@
 
 > 🌐 [English](../README.md) · [Русский](README.ru.md) · [Español](README.es.md) · [Français](README.fr.md) · **中文** · [术语表](https://github.com/alexar76/aicom/blob/main/docs/localization-glossary.md)
 
-> [WARDEN 质量检查周期：MOMUS → AI-Factory → SKOPOS → 共享节点智能体 → 部署](../../momus/docs/quality-cycle.zh.md).
+> [WARDEN 质量检查周期：MOMUS → AI-Factory → SKOPOS → 共享节点智能体 → 部署](https://github.com/alexar76/momus/blob/main/docs/quality-cycle.zh.md).
 
 
 > **自托管的 nginx/Apache 分析与面向服务器机队的 AI 安全** — 类 GA 的 HTTP 仪表盘、带 3D 威胁地图的 Security Center、Prometheus Observability（APM KPI + 3D 服务图）、扫描历史，以及带语音输入的 AI 智能体。无第三方追踪器；数据留在你自己的基础设施上。

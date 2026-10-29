@@ -2,7 +2,7 @@
 
 > 🌐 [English](../README.md) · **Русский** · [Español](README.es.md) · [Français](README.fr.md) · [中文](README.zh.md) · [Глоссарий](https://github.com/alexar76/aicom/blob/main/docs/localization-glossary.md)
 
-> [Цикл контроля качества WARDEN: MOMUS → AI-Factory → SKOPOS → общий нод-агент → деплой](../../momus/docs/quality-cycle.ru.md).
+> [Цикл контроля качества WARDEN: MOMUS → AI-Factory → SKOPOS → общий нод-агент → деплой](https://github.com/alexar76/momus/blob/main/docs/quality-cycle.ru.md).
 
 
 > **Самостоятельно размещаемая аналитика nginx/Apache и AI-безопасность для серверного флота** — HTTP-дашборды в духе GA, Security Center с 3D-картой угроз, Prometheus Observability (APM KPI + 3D service graph), история сканов и AI-агент с голосовым вводом. Без сторонних трекеров; данные остаются на вашей инфраструктуре.

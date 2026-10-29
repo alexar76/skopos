@@ -2,7 +2,7 @@
 
 > 🌐 [English](../README.md) · [Русский](README.ru.md) · [Español](README.es.md) · **Français** · [中文](README.zh.md) · [Glossaire](https://github.com/alexar76/aicom/blob/main/docs/localization-glossary.md)
 
-> [Cycle de contrôle qualité de WARDEN : MOMUS → AI-Factory → SKOPOS → agent de nœud partagé → déploiement](../../momus/docs/quality-cycle.fr.md).
+> [Cycle de contrôle qualité de WARDEN : MOMUS → AI-Factory → SKOPOS → agent de nœud partagé → déploiement](https://github.com/alexar76/momus/blob/main/docs/quality-cycle.fr.md).
 
 
 > **Analytique nginx/Apache auto-hébergée et sécurité IA pour votre flotte de serveurs** — tableaux de bord HTTP type GA, Security Center avec carte 3D des menaces, Prometheus Observability (KPI APM + graphe 3D de services), historique des scans et agent IA avec entrée vocale. Pas de trackers tiers ; les données restent sur votre infrastructure.
