@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+import pickle
 from pathlib import Path
 
 import pandas as pd
@@ -62,6 +63,19 @@ def test_cached_snapshot_never_refreshes_without_an_explicit_request():
     assert should_refresh_snapshot(cached_from_another_session, False) is False
     assert should_refresh_snapshot(cached_from_another_session, True) is True
     assert should_refresh_snapshot(None, False) is True
+
+
+def test_local_snapshot_cannot_execute_pickle_reducers(tmp_path):
+    from skopos.dashboard_snapshots import _snapshot_path
+
+    class ExecutableSnapshot:
+        def __reduce__(self):
+            # No external effects: proves a callable in the cache is not evaluated.
+            return eval, ("{'version': 1, 'payload': {'executed': True}}",)
+
+    path = _snapshot_path("analytics", "overview", tmp_path)
+    path.write_bytes(pickle.dumps(ExecutableSnapshot()))
+    assert load_dashboard_snapshot("analytics", "overview", cache_dir=tmp_path) is None
 
 
 def test_all_analytics_dashboards_render_and_cached_revisit_is_fast(tmp_path, monkeypatch):

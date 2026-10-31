@@ -14,7 +14,6 @@ import hashlib
 import io
 import json
 import os
-import pickle
 import tempfile
 import threading
 from datetime import datetime, timezone
@@ -65,13 +64,11 @@ def load_dashboard_snapshot(
             return payload
     path = _snapshot_path(namespace, signature, cache_dir)
     try:
-        with _LOCK, path.open("rb") as fh:
-            envelope = pickle.load(fh)  # trusted local file at a hashed, fixed path
-        if not isinstance(envelope, dict) or envelope.get("version") != SNAPSHOT_VERSION:
-            return None
-        payload = envelope.get("payload")
-        return payload if isinstance(payload, dict) else None
-    except (OSError, EOFError, pickle.PickleError, AttributeError, ValueError):
+        with _LOCK, path.open("r", encoding="ascii") as fh:
+            # Same data-only envelope as the shared DB cache. Legacy pickle files
+            # are cache misses, never deserialized or migrated by executing them.
+            return _decode_envelope(fh.read())
+    except (OSError, UnicodeError, AttributeError, ValueError):
         return None
 
 
@@ -99,14 +96,14 @@ def save_dashboard_snapshot(
             directory.mkdir(parents=True, exist_ok=True)
             fd, tmp_name = tempfile.mkstemp(prefix=".snapshot-", dir=str(directory))
             tmp_path = Path(tmp_name)
-            with os.fdopen(fd, "wb") as fh:
-                pickle.dump(envelope, fh, protocol=pickle.HIGHEST_PROTOCOL)
+            with os.fdopen(fd, "w", encoding="ascii") as fh:
+                fh.write(_encode_envelope(envelope))
                 fh.flush()
                 os.fsync(fh.fileno())
             os.chmod(tmp_path, 0o600)
             os.replace(tmp_path, path)
             _trim(directory)
-    except (OSError, pickle.PickleError, TypeError, ValueError):
+    except (OSError, TypeError, ValueError):
         if tmp_path is not None:
             try:
                 tmp_path.unlink(missing_ok=True)
@@ -147,6 +144,13 @@ def _restore_json(value: Any) -> Any:
     if isinstance(value, list):
         return [_restore_json(item) for item in value]
     return value
+
+
+def _encode_envelope(envelope: dict[str, Any]) -> str:
+    serialized = json.dumps(
+        _json_safe(envelope), cls=PlotlyJSONEncoder, separators=(",", ":"),
+    ).encode("utf-8")
+    return base64.b64encode(serialized).decode("ascii")
 
 
 def _decode_envelope(raw: str) -> dict[str, Any] | None:
@@ -193,12 +197,7 @@ def _save_to_db(db_target: str, cache_key: str, envelope: dict[str, Any]) -> Non
 
     con = None
     try:
-        serialized = json.dumps(
-            _json_safe(envelope),
-            cls=PlotlyJSONEncoder,
-            separators=(",", ":"),
-        ).encode("utf-8")
-        encoded = base64.b64encode(serialized).decode("ascii")
+        encoded = _encode_envelope(envelope)
         con = connect(db_target)
         con.execute(
             """
