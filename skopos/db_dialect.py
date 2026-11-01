@@ -85,8 +85,11 @@ def require_psycopg() -> Any:
 def split_sql_script(script: str) -> list[str]:
     parts: list[str] = []
     for chunk in script.split(";"):
-        stmt = chunk.strip()
-        if not stmt or stmt.startswith("--"):
+        # Drop comment lines, not the chunk: a statement with a comment above it used to be
+        # skipped whole on PostgreSQL (SQLite's executescript ran it), so a table could exist in
+        # every test and never in production. On 2026-11-01 that was own_traffic_daily.
+        stmt = "\n".join(line for line in chunk.splitlines() if not line.strip().startswith("--")).strip()
+        if not stmt:
             continue
         parts.append(stmt)
     return parts

@@ -47,6 +47,7 @@ from .node_protocol import (
 )
 from .node_report import NodeReport, parse_report
 from .node_store import NodeCredential
+from .own_traffic import own_addresses
 
 logger = logging.getLogger("skopos.node")
 
@@ -230,6 +231,7 @@ def ingest_report(
                 lines=lines,
                 geo=geo,
                 asn=asn,
+                own=own_addresses(cfg),
             )
 
             # Same resolver: the knocks get whatever is left of the lookup budget

@@ -36,6 +36,14 @@ CREATE TABLE IF NOT EXISTS ingested_lines (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_ingested_lines_unique
   ON ingested_lines(server_name, line_sha1);
 
+-- The fleet's own requests, counted instead of stored (skopos.own_traffic).
+CREATE TABLE IF NOT EXISTS own_traffic_daily (
+  day TEXT NOT NULL,
+  server_name TEXT NOT NULL,
+  requests BIGINT NOT NULL DEFAULT 0,
+  PRIMARY KEY (day, server_name)
+);
+
 CREATE TABLE IF NOT EXISTS http_requests (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   server_name TEXT NOT NULL,
@@ -95,6 +103,14 @@ CREATE TABLE IF NOT EXISTS ingested_lines (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_ingested_lines_unique
   ON ingested_lines(server_name, line_sha1);
+
+-- The fleet's own requests, counted instead of stored (skopos.own_traffic).
+CREATE TABLE IF NOT EXISTS own_traffic_daily (
+  day TEXT NOT NULL,
+  server_name TEXT NOT NULL,
+  requests BIGINT NOT NULL DEFAULT 0,
+  PRIMARY KEY (day, server_name)
+);
 
 CREATE TABLE IF NOT EXISTS http_requests (
   id BIGSERIAL PRIMARY KEY,
@@ -360,6 +376,72 @@ def insert_requests(
 
     con.commit()
     return inserted
+
+
+def count_own_requests(con: DbConnection, server_name: str, rows: Iterable[tuple[str, str]]) -> int:
+    """Count the fleet's own requests instead of storing them: ``rows`` are (dedup key, day).
+
+    Each line goes through ``ingested_lines`` like a stored row, so a log window read twice
+    counts once. Returns how many new lines were counted.
+    """
+    per_day: dict[str, int] = {}
+    for dedup_key, day in rows:
+        try:
+            cur = con.execute(
+                "INSERT INTO ingested_lines(server_name, line_sha1, ingested_at_utc) "
+                "VALUES(?,?,?) ON CONFLICT DO NOTHING",
+                (server_name, sha1_hex(dedup_key), now_utc_iso()),
+            )
+        except Exception as exc:
+            if is_integrity_error(exc):
+                if con.backend == "postgresql":
+                    con.connection.rollback()
+                continue
+            raise
+        raw_cur = cur._cursor if con.backend == "postgresql" else cur
+        if getattr(raw_cur, "rowcount", 1) == 0:
+            continue
+        per_day[day] = per_day.get(day, 0) + 1
+    for day, n in per_day.items():
+        con.execute(
+            "INSERT INTO own_traffic_daily(day, server_name, requests) VALUES(?,?,?) "
+            "ON CONFLICT(day, server_name) DO UPDATE SET requests = own_traffic_daily.requests + excluded.requests",
+            (day, server_name, n),
+        )
+    con.commit()
+    return sum(per_day.values())
+
+
+def prune_dedup(con: DbConnection, retention_days: int) -> int:
+    """Delete line hashes older than ``retention_days`` (0 keeps them). Returns rows removed."""
+    if not retention_days or retention_days <= 0:
+        return 0
+    cutoff = (datetime.now(tz=timezone.utc) - timedelta(days=retention_days)).isoformat()
+
+    def first_from(row_id: int):
+        return con.execute(
+            "SELECT id, ingested_at_utc FROM ingested_lines WHERE id >= ? ORDER BY id LIMIT 1", (row_id,)
+        ).fetchone()
+
+    first = con.execute("SELECT id, ingested_at_utc FROM ingested_lines ORDER BY id LIMIT 1").fetchone()
+    if first is None or first[1] >= cutoff:
+        return 0
+    # Ids grow with ingest time, so the last hash older than the cutoff is found by bisecting
+    # over the primary key: a few dozen index lookups instead of a scan or a second index.
+    lo, hi = int(first[0]), int(con.execute("SELECT max(id) FROM ingested_lines").fetchone()[0])
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        row = first_from(mid)
+        if row is not None and row[1] < cutoff:
+            lo = mid
+        else:
+            hi = mid - 1
+    last_old = int(first_from(lo)[0])
+    cur = con.execute("DELETE FROM ingested_lines WHERE id <= ?", (last_old,))
+    con.commit()
+    if con.backend == "postgresql":
+        return getattr(cur._cursor, "rowcount", 0) or 0
+    return getattr(cur, "rowcount", 0) or 0
 
 
 def prune_old_requests(con: DbConnection, retention_days: int) -> int:

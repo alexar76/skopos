@@ -652,6 +652,35 @@ def cmd_collect(cfg, *, stateless=False):
     return EXIT_OK
 
 
+#: A report that reaches the server while it restarts (a rollout, a container swap) waits
+#: and tries again inside the same run, instead of leaving the unit failed until the next
+#: timer tick. Each try burns a fresh sequence number (send_report does), so a try the server
+#: did authenticate cannot turn the next one into a replay. 50 s of waiting fits the unit's
+#: 120 s; a slow server (a timeout) is not retried, it would only run into that limit.
+RETRY_WAITS_S = (5, 15, 30)
+_TRANSIENT_HTTP = (502, 503, 504)
+
+
+def _transient(exc):
+    if isinstance(exc, urllib.error.HTTPError):
+        return exc.code in _TRANSIENT_HTTP
+    if isinstance(exc, urllib.error.URLError):
+        exc = exc.reason
+    # http.client.RemoteDisconnected is a ConnectionResetError: a server going down mid-answer.
+    return isinstance(exc, (ConnectionRefusedError, ConnectionResetError))
+
+
+def send_with_retry(cfg, credential, doc, *, waits=RETRY_WAITS_S, sleep=time.sleep):
+    for wait in tuple(waits) + (None,):
+        try:
+            return send_report(cfg, credential, doc)
+        except Exception as e:  # noqa: BLE001 - only transient failures are retried
+            if wait is None or not _transient(e):
+                raise
+            sys.stderr.write("SKOPOS_NODE_RETRY: %s: %s; again in %ds\n" % (type(e).__name__, e, wait))
+            sleep(wait)
+
+
 def cmd_report(cfg):
     credential = _read_json(CREDENTIAL_PATH)
 
@@ -661,7 +690,7 @@ def cmd_report(cfg):
     # attempt re-reads them and the server's deduplication absorbs the overlap.
     working = dict(load_state())
     doc = collect(cfg, working)
-    result = send_report(cfg, credential, doc)
+    result = send_with_retry(cfg, credential, doc)
 
     committed = load_state()  # re-read: send_report has advanced the sequence
     committed.update({k: v for k, v in working.items() if k != "seq"})

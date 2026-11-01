@@ -154,6 +154,14 @@ class AppConfig:
     #: Delete stored request rows older than this many days, once per collect
     #: cycle. Default 90; 0 keeps everything. See :func:`skopos.db.prune_old_requests`.
     http_retention_days: int = 90
+    #: Store the fleet's own requests to itself (monitors, health checks) as rows. Off, they
+    #: are only counted per day in ``own_traffic_daily``; see :mod:`skopos.own_traffic`.
+    store_own_traffic: bool = True
+    #: Addresses that count as the fleet's own besides the configured servers' own.
+    own_addresses: tuple[str, ...] = ()
+    #: Keep line hashes (deduplication) this many days; 0 keeps them forever. Ingest reads
+    #: by position with a small overlap, so a week covers every re-read with room to spare.
+    dedup_retention_days: int = 0
     security_auto_scan: bool = True
     security_scan_interval_minutes: int = DEFAULT_SECURITY_SCAN_INTERVAL_MINUTES
     telegram_enabled: bool = False
@@ -369,6 +377,26 @@ def load_config(path: str) -> AppConfig:
     except (TypeError, ValueError):
         http_retention_days = 90
 
+    store_raw = raw.get("store_own_traffic")
+    if store_raw in (None, ""):
+        store_raw = os.environ.get("SKOPOS_STORE_OWN_TRAFFIC", "1")
+    store_own_traffic = str(store_raw).strip().lower() not in ("0", "false", "no", "off")
+
+    own_raw = raw.get("own_addresses")
+    if own_raw in (None, ""):
+        own_raw = os.environ.get("SKOPOS_OWN_ADDRESSES", "")
+    if isinstance(own_raw, str):
+        own_raw = own_raw.split(",")
+    own_addresses = tuple(str(a).strip() for a in (own_raw or ()) if str(a).strip())
+
+    dedup_raw = raw.get("dedup_retention_days")
+    if dedup_raw in (None, ""):
+        dedup_raw = os.environ.get("SKOPOS_DEDUP_RETENTION_DAYS", "0")
+    try:
+        dedup_retention_days = max(0, int(dedup_raw))
+    except (TypeError, ValueError):
+        dedup_retention_days = 0
+
     return AppConfig(
         db_path=str(raw.get("db_path", "./skopos.sqlite3")),
         database_url=database_url,
@@ -377,6 +405,9 @@ def load_config(path: str) -> AppConfig:
         poll_interval_seconds=int(raw.get("poll_interval_seconds", 5)),
         batch_lines_per_server=int(raw.get("batch_lines_per_server", 4000)),
         http_retention_days=http_retention_days,
+        store_own_traffic=store_own_traffic,
+        own_addresses=own_addresses,
+        dedup_retention_days=dedup_retention_days,
         security_auto_scan=bool(raw.get("security_auto_scan", True)),
         security_scan_interval_minutes=scan_interval,
         telegram_enabled=bool(raw.get("telegram_enabled", False)),

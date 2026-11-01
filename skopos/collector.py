@@ -16,8 +16,11 @@ from .asn_db import AsnResolver, get_resolver as get_asn_resolver
 from .db import (
     ParsedRequest,
     connect_for_config,
+    count_own_requests,
     init_db,
     insert_requests,
+    now_utc_iso,
+    prune_dedup,
     prune_old_requests,
     upsert_collector_status,
 )
@@ -26,6 +29,7 @@ from .enrich import parse_user_agent, referer_domain
 from .geoip import GeoIPResolver, is_private_ip
 from .host_infer import infer_host
 from .log_sources import LogSource, fetch_lines, host_hint, parse_line, resolve_log_sources
+from .own_traffic import is_own, own_addresses
 
 
 @dataclass(frozen=True)
@@ -217,8 +221,12 @@ def ingest_lines(
     lines: Iterable[tuple[LogSource, str]],
     geo: GeoIPResolver | None = None,
     asn: AsnResolver | None = None,
+    own: frozenset[str] | None = None,
 ) -> tuple[int, int]:
     """Parse, enrich and store raw log lines. Returns (fetched, inserted).
+
+    With ``own`` (the fleet's addresses, :func:`skopos.own_traffic.own_addresses`), a line
+    from one of them is counted in ``own_traffic_daily`` instead of stored.
 
     The single ingest path for every transport. SSH-pulled output and a pushed
     report go through exactly this code, so a push node gets no shortcut around
@@ -226,13 +234,20 @@ def ingest_lines(
     is all any monitored host has ever been able to choose.
     """
     staged: list[tuple[LogSource, ParsedRequest]] = []
+    own_lines: list[tuple[str, str]] = []
     fetched = 0
     for src, ln in lines:
         fetched += 1
         pr = _parse_source_line(src, ln)
         if not pr:
             continue
-        staged.append((src, _sanitise(pr)))
+        pr = _sanitise(pr)
+        if is_own(pr.remote_addr, own):
+            own_lines.append((f"{src.id}\n{pr.line_raw}", (pr.ts_utc or now_utc_iso())[:10]))
+            continue
+        staged.append((src, pr))
+    if own_lines:
+        count_own_requests(con, server_name, own_lines)
 
     # Without a local MaxMind database each unseen address is a live HTTP lookup,
     # rate-limited to a few per second. A batch carrying thousands of distinct
@@ -328,6 +343,7 @@ def collect_once(
 
     geo = _make_geo(cfg)
     asn = _make_asn(cfg)
+    own = own_addresses(cfg)
     per_source_batch = max(500, int(cfg.batch_lines_per_server))
     wanted = {n for n in (server_names or set()) if n}
 
@@ -359,6 +375,7 @@ def collect_once(
                 lines=all_lines,
                 geo=geo,
                 asn=asn,
+                own=own,
             )
             upsert_collector_status(
                 con,
@@ -392,6 +409,15 @@ def collect_once(
     # Storage limitation (GDPR Art. 5(1)(e)): drop rows past the configured age
     # once per cycle, so retention is self-maintaining and needs no separate cron.
     # Defaults to 90 days; 0 keeps everything for an operator who wants full history.
+    dedup_days = int(getattr(cfg, "dedup_retention_days", 0) or 0)
+    if dedup_days > 0:
+        try:
+            prune_dedup(con, dedup_days)
+        except Exception:
+            try:
+                con.connection.rollback()
+            except Exception:
+                pass
     retention_days = int(getattr(cfg, "http_retention_days", 0) or 0)
     if retention_days > 0:
         try:
