@@ -3,15 +3,35 @@
 All notable changes to SKOPOS (self-hosted nginx analytics & AI security) are documented here.
 
 
-## [Unreleased]
+## [0.3.0] — 2026-11-03
+
+### Added
+- **Counting the fleet's own requests instead of storing them.** `store_own_traffic` (`SKOPOS_STORE_OWN_TRAFFIC`,
+  default on, which keeps the old behaviour) off: a line whose client address is a fleet address is not stored but
+  counted per day and server in `own_traffic_daily`, once per log line. Fleet addresses are the configured servers
+  written as IPs plus `own_addresses` (`SKOPOS_OWN_ADDRESSES`); host names are not resolved and private addresses never
+  count. On skopos-vps 88% of stored rows were the fleet talking to itself.
+- **Line hashes can be pruned.** `dedup_retention_days` (`SKOPOS_DEDUP_RETENTION_DAYS`, default 0 = keep) removes old
+  rows of the ingest deduplication table, which had never been pruned (7.1 GB for 30 M lines on one host).
 
 ### Fixed
+- **A schema statement with a comment above it was skipped on PostgreSQL.** `split_sql_script` dropped any chunk that
+  began with `--`, the statement under the comment included; SQLite runs the script whole, so tests passed. Comment
+  lines are now dropped and the statement kept.
+- **skopos-node retries a report that meets a restarting server.** On connection refused/reset and 502/503/504 it
+  tries again after 5, 15 and 30 s, each try with a fresh sequence number; a timeout, a 4xx, a 500 or an unsafe config
+  still fail at once.
 - **Retention never ran where nodes push.** `dedup_retention_days` and `http_retention_days` were applied only at the end of
   a collector cycle. A host whose nodes push their reports runs no cycle: metis's line hashes grew to 30 M rows, and setting
   `SKOPOS_DEDUP_RETENTION_DAYS` did nothing. The API server now runs the same retention pass at start and then every hour
   (`SKOPOS_RETENTION_INTERVAL_S`, default 3600; 0 turns it off).
 - **Pruning line hashes failed on PostgreSQL.** `prune_dedup` read rows by position, and psycopg returns them as dicts, so
   every Postgres pass raised `KeyError` and the collector swallowed it. Rows are read by column name.
+
+### Security
+- **Dashboard snapshots are no longer pickled.** The on-disk snapshot cache used `pickle`; it now stores the same
+  data-only JSON envelope as the shared database cache. Old pickle files are treated as cache misses and are never
+  loaded.
 
 ## [0.2.3] — 2026-10-29
 

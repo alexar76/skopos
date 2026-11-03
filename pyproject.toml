@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "skopos-fleet"
 # Dashboard socket-peer enforcement, including Streamlit's Starlette server.
-version = "0.2.3"
+version = "0.3.0"
 description = "SKOPOS (Σκοπός) — self-hosted nginx analytics and fleet security for the AICOM ecosystem."
 readme = "README.md"
 license = { text = "MIT" }
