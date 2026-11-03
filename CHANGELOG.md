@@ -3,6 +3,16 @@
 All notable changes to SKOPOS (self-hosted nginx analytics & AI security) are documented here.
 
 
+## [Unreleased]
+
+### Fixed
+- **Retention never ran where nodes push.** `dedup_retention_days` and `http_retention_days` were applied only at the end of
+  a collector cycle. A host whose nodes push their reports runs no cycle: metis's line hashes grew to 30 M rows, and setting
+  `SKOPOS_DEDUP_RETENTION_DAYS` did nothing. The API server now runs the same retention pass at start and then every hour
+  (`SKOPOS_RETENTION_INTERVAL_S`, default 3600; 0 turns it off).
+- **Pruning line hashes failed on PostgreSQL.** `prune_dedup` read rows by position, and psycopg returns them as dicts, so
+  every Postgres pass raised `KeyError` and the collector swallowed it. Rows are read by column name.
+
 ## [0.2.3] — 2026-10-29
 
 ### Security

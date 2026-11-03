@@ -64,6 +64,42 @@ def _skopos_cfg():
     return load_config(os.environ.get("SKOPOS_CONFIG_PATH", "./servers.yaml"))
 
 
+#: Seconds between retention passes; 0 turns them off.
+_RETENTION_EVERY_S = int(os.environ.get("SKOPOS_RETENTION_INTERVAL_S", "3600") or 0)
+
+
+def _apply_retention() -> tuple[int, int]:
+    """Drop line hashes and stored requests past their configured age; returns (hashes, requests).
+
+    The collector's cycle does this after every poll, but a host whose nodes push their
+    reports runs no cycle: until 2026-11-02 nothing on metis applied `dedup_retention_days`
+    or `http_retention_days`, the hashes grew to 30 M rows, and setting the window did nothing.
+    """
+    from skopos.db import connect_for_config, prune_dedup, prune_old_requests
+
+    cfg = _skopos_cfg()
+    dedup = int(getattr(cfg, "dedup_retention_days", 0) or 0)
+    kept = int(getattr(cfg, "http_retention_days", 0) or 0)
+    if dedup <= 0 and kept <= 0:
+        return 0, 0
+    con = connect_for_config(cfg)
+    try:
+        return prune_dedup(con, dedup), prune_old_requests(con, kept)
+    finally:
+        con.close()
+
+
+def _retention_forever() -> None:
+    while True:
+        try:
+            hashes, rows = _apply_retention()
+            if hashes or rows:
+                logger.info("retention: removed %d line hashes and %d stored requests past their age", hashes, rows)
+        except Exception:
+            logger.exception("retention pass failed")
+        time.sleep(_RETENTION_EVERY_S)
+
+
 def _check_api_key(handler: BaseHTTPRequestHandler, cfg) -> bool:
     if not cfg.api_key:
         # No key configured used to mean "let everyone in". These endpoints
@@ -512,6 +548,8 @@ def main() -> None:
     # daemon threads so a hung request never blocks shutdown.
     server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
     server.daemon_threads = True
+    if _RETENTION_EVERY_S > 0:
+        threading.Thread(target=_retention_forever, name="retention", daemon=True).start()
     server.serve_forever()
 
 

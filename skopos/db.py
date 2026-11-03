@@ -418,25 +418,28 @@ def prune_dedup(con: DbConnection, retention_days: int) -> int:
         return 0
     cutoff = (datetime.now(tz=timezone.utc) - timedelta(days=retention_days)).isoformat()
 
+    # Columns by name: Postgres rows are dicts (psycopg dict_row), and reading them by position
+    # raised KeyError on every pass until 2026-11-02, so no Postgres install ever pruned.
     def first_from(row_id: int):
         return con.execute(
             "SELECT id, ingested_at_utc FROM ingested_lines WHERE id >= ? ORDER BY id LIMIT 1", (row_id,)
         ).fetchone()
 
     first = con.execute("SELECT id, ingested_at_utc FROM ingested_lines ORDER BY id LIMIT 1").fetchone()
-    if first is None or first[1] >= cutoff:
+    if first is None or first["ingested_at_utc"] >= cutoff:
         return 0
     # Ids grow with ingest time, so the last hash older than the cutoff is found by bisecting
     # over the primary key: a few dozen index lookups instead of a scan or a second index.
-    lo, hi = int(first[0]), int(con.execute("SELECT max(id) FROM ingested_lines").fetchone()[0])
+    lo = int(first["id"])
+    hi = int(con.execute("SELECT max(id) AS hi FROM ingested_lines").fetchone()["hi"])
     while lo < hi:
         mid = (lo + hi + 1) // 2
         row = first_from(mid)
-        if row is not None and row[1] < cutoff:
+        if row is not None and row["ingested_at_utc"] < cutoff:
             lo = mid
         else:
             hi = mid - 1
-    last_old = int(first_from(lo)[0])
+    last_old = int(first_from(lo)["id"])
     cur = con.execute("DELETE FROM ingested_lines WHERE id <= ?", (last_old,))
     con.commit()
     if con.backend == "postgresql":

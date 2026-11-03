@@ -136,3 +136,52 @@ def test_the_postgres_schema_creates_the_totals_table():
     statements = split_sql_script(POSTGRES_SCHEMA)
     assert any(s.startswith("CREATE TABLE IF NOT EXISTS own_traffic_daily") for s in statements)
     assert split_sql_script("-- only a comment\n;\n-- a note\nSELECT 1;") == ["SELECT 1"]
+
+
+def test_the_api_applies_retention_where_nodes_push(tmp_path, monkeypatch):
+    """metis runs only the API and the dashboard; its nodes push, so no collector cycle ever pruned
+    there and SKOPOS_DEDUP_RETENTION_DAYS did nothing (2026-11-02). The API now does the pass."""
+    import api_server
+
+    for name in ("SKOPOS_DATABASE_URL", "SKOPOS_IP_ANONYMIZE", "SKOPOS_STORE_RAW_LINES"):
+        monkeypatch.delenv(name, raising=False)
+    path = tmp_path / "skopos.yml"
+    path.write_text(
+        f"db_path: {tmp_path / 's.sqlite3'}\nhttp_retention_days: 90\nservers:\n"
+        "  - name: pushed\n    source: ssh_nginx_access_log\n    transport: agent-push\n"
+        "    address: 9.9.9.9\n    nginx: {access_log_path: /var/log/nginx/access.log}\n"
+    )
+    monkeypatch.setenv("SKOPOS_CONFIG_PATH", str(path))
+    monkeypatch.setenv("SKOPOS_DEDUP_RETENTION_DAYS", "7")
+    con = connect(str(tmp_path / "s.sqlite3"))
+    init_db(con)
+    now = datetime.now(timezone.utc)
+    for i, age in enumerate((9, 8, 1)):
+        con.execute("INSERT INTO ingested_lines(server_name, line_sha1, ingested_at_utc) VALUES('pushed',?,?)",
+                    (f"h{i}", (now - timedelta(days=age)).isoformat()))
+    for age in (120, 10):
+        stamp = (now - timedelta(days=age)).isoformat()
+        con.execute("INSERT INTO http_requests(server_name, ts_utc, line_raw, ingested_at_utc) VALUES('pushed',?,'x',?)",
+                    (stamp, stamp))
+    con.commit()
+
+    assert api_server._apply_retention() == (2, 1)
+    assert con.execute("SELECT count(*) FROM ingested_lines").fetchone()[0] == 1
+    assert con.execute("SELECT count(*) FROM http_requests").fetchone()[0] == 1
+    assert api_server._apply_retention() == (0, 0)
+
+    monkeypatch.setenv("SKOPOS_DEDUP_RETENTION_DAYS", "0")
+    path.write_text(path.read_text().replace("http_retention_days: 90", "http_retention_days: 0"))
+    assert api_server._apply_retention() == (0, 0)
+
+
+def test_pruning_reads_rows_by_name_as_postgres_returns_them(db):
+    """psycopg's dict_row has no positions: `first[1]` raised KeyError on every Postgres pass."""
+    db.connection.row_factory = lambda cur, row: {d[0]: v for d, v in zip(cur.description, row)}
+    now = datetime.now(timezone.utc)
+    for i, age in enumerate((9, 8, 1)):
+        db.execute("INSERT INTO ingested_lines(server_name, line_sha1, ingested_at_utc) VALUES('s',?,?)",
+                   (f"h{i}", (now - timedelta(days=age)).isoformat()))
+    db.commit()
+    assert prune_dedup(db, 7) == 2
+    assert db.execute("SELECT count(*) AS n FROM ingested_lines").fetchone()["n"] == 1
