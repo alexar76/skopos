@@ -28,7 +28,7 @@ dependencies = [
     "python-dotenv>=1.2.2",
     "httpx>=0.27",
     "geoip2>=4.8",
-    "cryptography>=44",
+    "cryptography>=50.0.2",
     # Declared, not merely assumed. deploy_order.py imports oracle_core.signing to verify the
     # conductor/MOMUS signature chain that gates every redeploy — with a `try/except: Signer =
     # None` fallback whose comment says "always present in the ecosystem venv". It was never in

@@ -2597,7 +2597,7 @@ postgres = [
 [package.metadata]
 requires-dist = [
     { name = "aimarket-oracle-core", extras = ["pqc"], specifier = ">=0.2" },
-    { name = "cryptography", specifier = ">=44" },
+    { name = "cryptography", specifier = ">=50.0.2" },
     { name = "geoip2", specifier = ">=4.8" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "pandas", specifier = ">=2.0" },
